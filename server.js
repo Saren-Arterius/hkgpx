@@ -8,9 +8,9 @@ var md5 = require('MD5');
 // Constants
 var POSTS_PER_PAGE = 25;
 var SAVE_MIN_INTERVAL = 5 * 1000;
-var ACCOUNT_CLEANUP_INTERVAL = 600 * 1000;
-var HKGOLDEN_CACHE_TIME = 5 * 1000;
-// var HKGOLDEN_CACHE_TIME = 60 * 1000;
+var CLEANUP_INTERVAL = 600 * 1000;
+var HKGOLDEN_CACHE_TIME = 60 * 1000;
+var HKGOLDEN_PERSISTENT_CACHE_TIME = 3 * 3600 * 1000;
 var dbFilename = path.join(__dirname, "db.json");
 var functionMinInterval = {
   "hkg_desktop": 5 * 1000,
@@ -113,12 +113,13 @@ for (var key in rateLimitFieldsResetIntervals) {
   })(key);
 }
 
-// Unverified ac cleanup
+// Unverified ac cleanup, also cleans untouched persistent cache
 setInterval(function() {
   var now = Date.now();
   var modified = false;
   for (var id in db["accounts"]) {
-    if (db["accounts"][id]["verified"]) {
+    if (db["accounts"][id]["verified"] &&
+      "destroy_if_not_verified_after" in db["accounts"][id]) {
       modified = true;
       delete db["accounts"][id]["destroy_if_not_verified_after"];
       continue;
@@ -129,10 +130,17 @@ setInterval(function() {
     modified = true;
     delete db["accounts"][id];
   }
+  for (var cacheKey in db["persistent_cache"]) {
+    if (db["persistent_cache"][cacheKey]["expires"] > now) {
+      continue;
+    }
+    modified = true;
+    delete db["persistent_cache"][cacheKey];
+  }
   if (modified) {
     saveDb();
   }
-}, ACCOUNT_CLEANUP_INTERVAL);
+}, CLEANUP_INTERVAL);
 
 // Misc functions
 Date.prototype.yyyymmdd = function() {
@@ -233,7 +241,7 @@ env("", function(errors, window) {
         "public_token": publicToken,
         "private_token": null,
         "verified": false,
-        "destroy_if_not_verified_after": Date.now() + ACCOUNT_CLEANUP_INTERVAL
+        "destroy_if_not_verified_after": Date.now() + CLEANUP_INTERVAL
       }
       db["accounts"][req.params.id] = account;
     }
@@ -374,7 +382,9 @@ env("", function(errors, window) {
 
     var cacheKey = "{}-{}".format(req.params.topic_id, page);
     if (cacheKey in db["persistent_cache"]) {
+      db["persistent_cache"][cacheKey]["expires"] = Date.now() + HKGOLDEN_PERSISTENT_CACHE_TIME;
       res.send(db["persistent_cache"][cacheKey]["data"])
+      saveDb();
       return;
     }
     var now = Date.now();
@@ -411,13 +421,14 @@ env("", function(errors, window) {
         }
         var cache = {
           "data": JSON.parse(body),
-          "expires": Date.now() + HKGOLDEN_CACHE_TIME
         }
         sendToAllResponses(cacheKey, 200, cache["data"]);
         if (cache["data"]["messages"].length == limit) {
+          cache["expires"] = Date.now() + HKGOLDEN_PERSISTENT_CACHE_TIME;
           db["persistent_cache"][cacheKey] = cache;
           saveDb();
         } else {
+          cache["expires"] = Date.now() + HKGOLDEN_CACHE_TIME;
           caches[cacheKey] = cache;
         }
       })
