@@ -1,7 +1,6 @@
 {
   "name": "hkgpx",
   "version": "0.0.1",
-  "description": "",
   "main": "server.js",
   "dependencies": {
     "jquery": "^2.1.4",
@@ -23,5 +22,6 @@
   "bugs": {
     "url": "https://github.com/Saren-Arterius/hkgpx/issues"
   },
-  "homepage": "https://github.com/Saren-Arterius/hkgpx#readme"
+  "homepage": "https://github.com/Saren-Arterius/hkgpx#readme",
+  "description": ""
 }
