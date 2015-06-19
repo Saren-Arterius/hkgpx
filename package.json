@@ -1,0 +1,27 @@
+{
+  "name": "hkgpx",
+  "version": "0.0.1",
+  "description": "",
+  "main": "server.js",
+  "dependencies": {
+    "jquery": "^2.1.4",
+    "jsdom": "^3.1.2",
+    "request": "^2.58.0",
+    "restify": "^3.0.3"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Saren-Arterius/hkgpx.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Saren-Arterius/hkgpx/issues"
+  },
+  "homepage": "https://github.com/Saren-Arterius/hkgpx#readme"
+}

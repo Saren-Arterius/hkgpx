@@ -3,22 +3,26 @@ var env = require('jsdom').env;
 var request = require('request');
 var fs = require('fs');
 var path = require('path');
+var md5 = require('MD5');
 
 // Constants
+var POSTS_PER_PAGE = 25;
 var SAVE_MIN_INTERVAL = 5 * 1000;
 var ACCOUNT_CLEANUP_INTERVAL = 600 * 1000;
+var HKGOLDEN_CACHE_TIME = 5 * 1000;
+// var HKGOLDEN_CACHE_TIME = 60 * 1000;
 var dbFilename = path.join(__dirname, "db.json");
 var functionMinInterval = {
-  "hkg_desktop": 8 * 1000,
-  "hkg_api": 3 * 1000,
+  "hkg_desktop": 5 * 1000,
+  "hkg_api": 2 * 1000,
 };
 var rateLimitFieldsResetIntervals = {
-  "account_action": 10 * 1000
+  "account_action": 1 * 1000,
+  // "account_action": 60 * 1000,
+  "hkg_api_access": 1 * 1000
+    // "hkg_api_access": 300 * 1000
 };
 var lastSaveDb = 0;
-
-// accounts to be verified
-var pendingVerifiedAccounts = [];
 
 // functionNextRun
 var functionNextRun = {};
@@ -55,11 +59,29 @@ try {
   var db = {
     "rate_limit": {},
     "accounts": {},
+    "persistent_cache": {},
   };
 } finally {
   saveDb();
 }
 
+// Topic list / Temp topic cache
+var caches = {};
+var pendingResponses = {};
+var addPendingResponse = function(cacheKey, res) {
+  if (!(cacheKey in pendingResponses)) {
+    pendingResponses[cacheKey] = [];
+  }
+  pendingResponses[cacheKey].push(res);
+  return pendingResponses[cacheKey].length == 1;
+}
+var sendToAllResponses = function(cacheKey, responseCode, body) {
+  for (var i in pendingResponses[cacheKey]) {
+    var pRes = pendingResponses[cacheKey][i];
+    pRes.send(responseCode, body);
+  }
+  pendingResponses[cacheKey] = [];
+}
 
 // Rate limit system
 var resetRateLimit = function(field) {
@@ -84,9 +106,11 @@ var checkRateLimit = function(field, key, max) {
 }
 
 for (var key in rateLimitFieldsResetIntervals) {
-  setInterval(function() {
-    resetRateLimit(key);
-  }, rateLimitFieldsResetIntervals[key]);
+  (function(key) {
+    setInterval(function() {
+      resetRateLimit(key);
+    }, rateLimitFieldsResetIntervals[key]);
+  })(key);
 }
 
 // Unverified ac cleanup
@@ -111,6 +135,63 @@ setInterval(function() {
 }, ACCOUNT_CLEANUP_INTERVAL);
 
 // Misc functions
+Date.prototype.yyyymmdd = function() {
+  var yyyy = this.getFullYear().toString();
+  var mm = (this.getMonth() + 1).toString(); // getMonth() is zero-based
+  var dd = this.getDate().toString();
+  return yyyy + (mm[1] ? mm : "0" + mm[0]) + (dd[1] ? dd : "0" + dd[0]); // padding
+};
+
+String.prototype.format = function() {
+  var i = 0,
+    args = arguments;
+  return this.replace(/{}/g, function() {
+    return typeof args[i] != 'undefined' ? args[i++] : '';
+  });
+};
+
+var isInt = function(value) {
+  return !isNaN(value) &&
+    parseInt(Number(value)) == value &&
+    !isNaN(parseInt(value, 10));
+}
+
+var checkInt = function(value, varName, res) {
+  if (!isInt(value)) {
+    res.send(400, "{} must be integer.".format(varName));
+    return true;
+  }
+  if (parseInt(value) <= 0) {
+    res.send(400, "{} must be greater than 0.".format(varName));
+    return true;
+  }
+  return false;
+}
+
+var checkAPIRequest = function(req, res) {
+  if (req.params.private_token.length != 32) {
+    res.send(400, "Private token's length must be 32.");
+    return true;
+  }
+  if (!(req.params.id in db["accounts"])) {
+    res.send(400, "Account does not exist.");
+    return true;
+  }
+  if (!db["accounts"][req.params.id]["verified"]) {
+    res.send(400, "Account is not yet verified.");
+    return true;
+  }
+  if (!checkRateLimit("hkg_api_access", req.params.private_token, 50)) {
+    res.send(429, "Rate limit exceeded.");
+    return true;
+  }
+  if (req.params.private_token !== db["accounts"][req.params.id]["private_token"]) {
+    res.send(400, "Private token mismatch.");
+    return true;
+  }
+  return false;
+}
+
 var makeID = function() {
   var text = "";
   var possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -121,10 +202,8 @@ var makeID = function() {
   return text;
 }
 
-var isInt = function(value) {
-  return !isNaN(value) &&
-    parseInt(Number(value)) == value &&
-    !isNaN(parseInt(value, 10));
+var apiKey = function(userID) {
+  return md5("{}_HKGOLDEN_{}_$API#1.3^".format(new Date().yyyymmdd(), userID));
 }
 
 env("", function(errors, window) {
@@ -132,15 +211,15 @@ env("", function(errors, window) {
   var server = restify.createServer();
 
   server.get('/new-account/:id/:private_token', function(req, res, next) {
-    if (!isInt(req.params.id)) {
-      res.send(400, "ID must be integer.");
+    res.charSet('utf-8');
+    if (checkInt(req.params.id, "ID", res)) {
       return;
     }
     if (req.params.private_token.length != 32) {
       res.send(400, "Private token's length must be 32.");
       return;
     }
-    if (!checkRateLimit("account_action", req.headers["x-real-ip"], 3)) {
+    if (!checkRateLimit("account_action", req.headers["x-real-ip"], 6)) {
       res.send(429, "Rate limit exceeded.");
       return;
     }
@@ -167,8 +246,8 @@ env("", function(errors, window) {
   });
 
   server.get('/verify-account/:id/:private_token', function(req, res, next) {
-    if (!isInt(req.params.id)) {
-      res.send(400, "ID must be integer.");
+    res.charSet('utf-8');
+    if (checkInt(req.params.id, "ID", res)) {
       return;
     }
     if (req.params.private_token.length != 32) {
@@ -179,52 +258,169 @@ env("", function(errors, window) {
       res.send(400, "Account does not exist.");
       return;
     }
+    if (!checkRateLimit("account_action", req.headers["x-real-ip"], 6)) {
+      res.send(429, "Rate limit exceeded.");
+      return;
+    }
     if (req.params.private_token !== db["accounts"][req.params.id]["pending_private_token"]) {
       res.send(400, "Private token mismatch.");
-      return;
-    }
-    if (pendingVerifiedAccounts.indexOf(req.params.id) !== -1) {
-      res.send(409, "System is already verifying user's account.");
-      return;
-    }
-    if (!checkRateLimit("account_action", req.headers["x-real-ip"], 3)) {
-      res.send(429, "Rate limit exceeded.");
       return;
     }
     if (db["accounts"][req.params.id]["private_token"] === db["accounts"][req.params.id]["pending_private_token"]) {
       res.send(400, "Already verified this account and this private token.");
       return;
     }
-    pendingVerifiedAccounts.push(req.params.id);
+    if (!addPendingResponse(req.params.id, res)) {
+      return;
+    }
     var options = {
-      url: 'http://forum15.hkgolden.com/ProfilePage.aspx?userid=' + req.params.id,
+      url: 'http://forum15.hkgolden.com/ProfilePage.aspx?userid={}'.format(req.params.id),
       headers: {
         'User-Agent': 'Mozilla/5.0'
       }
     };
     delayedFunctionRun("hkg_desktop", function() {
       request(options, function(error, response, body) {
-        var index = pendingVerifiedAccounts.indexOf(req.params.id);
-        pendingVerifiedAccounts.splice(index, 1);
         if (error || response.statusCode != 200) {
-          res.send(502, "Server has received an invalid response from upstream.");
+          sendToAllResponses(req.params.id, 502, "Server has received an invalid response from upstream.");
           return;
         }
         var websiteField = $(body).find("#ctl00_ContentPlaceHolder1_lb_website");
         if (!websiteField.length) {
-          res.send(502, "Server has received an invalid response from upstream.");
+          sendToAllResponses(req.params.id, 502, "Server has received an invalid response from upstream.");
           return;
         }
         var publicToken = websiteField.text().trim();
         if (publicToken !== db["accounts"][req.params.id]["public_token"]) {
-          res.send(417, "Fetched public token does not match database's record.");
+          sendToAllResponses(req.params.id, 417, "Fetched public token does not match database's record.");
           return;
         }
         db["accounts"][req.params.id]["verified"] = true;
         db["accounts"][req.params.id]["private_token"] = db["accounts"][req.params.id]["pending_private_token"];
-        res.send(200, "Successfully verified this account or this new private token.");
+        sendToAllResponses(req.params.id, 200, "Successfully verified this account or this new private token.");
         saveDb();
       });
+    });
+  });
+
+  var validForums = ["ET", "CA", "FN", "GM", "HW", "IN", "SW", "MP", "AP",
+    "SP", "LV", "SY", "ED", "BB", "PT", "TR", "CO", "AN", "TO", "MU", "VI",
+    "DC", "ST", "WK", "TS", "RA", "MB", "AC", "JT", "EP", "BW"
+  ];
+
+  server.get('/topics/:forum/:page/:id/:private_token', function(req, res, next) {
+    res.charSet('utf-8');
+    if (checkInt(req.params.id, "ID", res)) {
+      return;
+    }
+    if (checkInt(req.params.page, "Page", res)) {
+      return;
+    }
+    if (validForums.indexOf(req.params.forum) === -1) {
+      res.send(400, "Forum is not valid.");
+      return;
+    }
+    if (checkAPIRequest(req, res)) {
+      return;
+    }
+    var cacheKey = "{}-{}".format(req.params.forum, req.params.page - 1);
+    var now = Date.now();
+    if (cacheKey in caches && caches[cacheKey]["expires"] >= now) {
+      res.send(caches[cacheKey]["data"])
+      return;
+    }
+    if (!addPendingResponse(cacheKey, res)) {
+      return;
+    }
+    var options = {
+      url: 'http://android-1-1.hkgolden.com/newTopics.aspx?s={}&user_id={}&type={}&page={}&returntype=json'.format(
+        apiKey(req.params.id), req.params.id, req.params.forum, req.params.page
+      ),
+      headers: {
+        'User-Agent': 'Mozilla/5.0'
+      }
+    };
+    delayedFunctionRun("hkg_api", function() {
+      request(options, function(error, response, body) {
+        if (error || response.statusCode != 200) {
+          sendToAllResponses(cacheKey, 502, "Server has received an invalid response from upstream.");
+          return;
+        }
+        var cache = {
+          "data": JSON.parse(body),
+          "expires": Date.now() + HKGOLDEN_CACHE_TIME
+        }
+        sendToAllResponses(cacheKey, 200, cache["data"]);
+        caches[cacheKey] = cache;
+      })
+    });
+  });
+
+  server.get('/view-topic/:topic_id/:page/:id/:private_token', function(req, res, next) {
+    res.charSet('utf-8');
+    if (checkInt(req.params.id, "User ID", res)) {
+      return;
+    }
+    if (checkInt(req.params.topic_id, "Topic ID", res)) {
+      return;
+    }
+    if (checkInt(req.params.page, "Page", res)) {
+      return;
+    }
+    if (checkAPIRequest(req, res)) {
+      return;
+    }
+    var page = req.params.page - 1;
+
+    var cacheKey = "{}-{}".format(req.params.topic_id, page);
+    if (cacheKey in db["persistent_cache"]) {
+      res.send(db["persistent_cache"][cacheKey]["data"])
+      return;
+    }
+    var now = Date.now();
+    if (cacheKey in caches && caches[cacheKey]["expires"] >= now) {
+      res.send(caches[cacheKey]["data"])
+      return;
+    }
+    if (!addPendingResponse(cacheKey, res)) {
+      return;
+    }
+    var start = page == 0 ? 0 : page * POSTS_PER_PAGE + 1;
+    var limit = page == 0 ? POSTS_PER_PAGE + 1 : POSTS_PER_PAGE;
+
+    var options = {
+      url: 'http://android-1-1.hkgolden.com/newView.aspx',
+      headers: {
+        'User-Agent': 'Mozilla/5.0'
+      },
+      form: {
+        s: apiKey(req.params.id),
+        user_id: req.params.id,
+        message: req.params.topic_id,
+        start: start,
+        limit: limit,
+        returntype: "json"
+      }
+    };
+
+    delayedFunctionRun("hkg_api", function() {
+      request(options, function(error, response, body) {
+        if (error || response.statusCode != 200) {
+          sendToAllResponses(cacheKey, 502, "Server has received an invalid response from upstream.");
+          return;
+        }
+        var cache = {
+          "data": JSON.parse(body),
+          "expires": Date.now() + HKGOLDEN_CACHE_TIME
+        }
+        sendToAllResponses(cacheKey, 200, cache["data"]);
+        if (cache["data"]["messages"].length == limit) {
+          db["persistent_cache"][cacheKey] = cache;
+          saveDb();
+        } else {
+          caches[cacheKey] = cache;
+        }
+      })
     });
   });
 
