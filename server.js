@@ -11,16 +11,15 @@ var SAVE_MIN_INTERVAL = 5 * 1000;
 var CLEANUP_INTERVAL = 600 * 1000;
 var HKGOLDEN_CACHE_TIME = 60 * 1000;
 var HKGOLDEN_PERSISTENT_CACHE_TIME = 3 * 3600 * 1000;
+var API_ACCESS_RATE_LIMIT_TIMES = 50;
 var dbFilename = path.join(__dirname, "db.json");
 var functionMinInterval = {
   "hkg_desktop": 5 * 1000,
   "hkg_api": 2 * 1000,
 };
 var rateLimitFieldsResetIntervals = {
-  "account_action": 1 * 1000,
-  // "account_action": 60 * 1000,
-  "hkg_api_access": 1 * 1000
-    // "hkg_api_access": 300 * 1000
+  "account_action": 180 * 1000,
+  "hkg_api_access": 300 * 1000
 };
 var lastSaveDb = 0;
 
@@ -189,7 +188,7 @@ var checkAPIRequest = function(req, res) {
     res.send(400, "Account is not yet verified.");
     return true;
   }
-  if (!checkRateLimit("hkg_api_access", req.params.private_token, 50)) {
+  if (!checkRateLimit("hkg_api_access", req.params.private_token, API_ACCESS_RATE_LIMIT_TIMES)) {
     res.send(429, "Rate limit exceeded.");
     return true;
   }
@@ -227,7 +226,7 @@ env("", function(errors, window) {
       res.send(400, "Private token's length must be 32.");
       return;
     }
-    if (!checkRateLimit("account_action", req.headers["x-real-ip"], 6)) {
+    if (!checkRateLimit("account_action", req.headers["x-real-ip"], 10)) {
       res.send(429, "Rate limit exceeded.");
       return;
     }
@@ -266,7 +265,7 @@ env("", function(errors, window) {
       res.send(400, "Account does not exist.");
       return;
     }
-    if (!checkRateLimit("account_action", req.headers["x-real-ip"], 6)) {
+    if (!checkRateLimit("account_action", req.headers["x-real-ip"], 10)) {
       res.send(429, "Rate limit exceeded.");
       return;
     }
@@ -439,6 +438,14 @@ env("", function(errors, window) {
   server.post('/raw-request/:id/:private_token', function(req, res, next) {
     res.charSet('utf-8');
     if (checkInt(req.params.id, "User ID", res)) {
+      return;
+    }
+    if (req.body.path.charAt(0) !== '/') {
+      res.send(400, "Raw request path is invalid.");
+      return;
+    }
+    if (!("api" in req.body)) {
+      res.send(400, "Raw request did not indicate to use API or not.");
       return;
     }
     if (checkAPIRequest(req, res)) {
