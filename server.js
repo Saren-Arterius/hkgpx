@@ -218,7 +218,7 @@ env("", function(errors, window) {
   var $ = require('jquery')(window);
   var server = restify.createServer();
 
-  server.get('/new-account/:id/:private_token', function(req, res, next) {
+  server.put('/new-account/:id/:private_token', function(req, res, next) {
     res.charSet('utf-8');
     if (checkInt(req.params.id, "ID", res)) {
       return;
@@ -253,7 +253,7 @@ env("", function(errors, window) {
     saveDb();
   });
 
-  server.get('/verify-account/:id/:private_token', function(req, res, next) {
+  server.post('/verify-account/:id/:private_token', function(req, res, next) {
     res.charSet('utf-8');
     if (checkInt(req.params.id, "ID", res)) {
       return;
@@ -316,7 +316,7 @@ env("", function(errors, window) {
     "DC", "ST", "WK", "TS", "RA", "MB", "AC", "JT", "EP", "BW"
   ];
 
-  server.get('/topics/:forum/:page/:id/:private_token', function(req, res, next) {
+  server.get('/topic-list/:forum/:page/:id/:private_token', function(req, res, next) {
     res.charSet('utf-8');
     if (checkInt(req.params.id, "ID", res)) {
       return;
@@ -431,6 +431,39 @@ env("", function(errors, window) {
           cache["expires"] = Date.now() + HKGOLDEN_CACHE_TIME;
           caches[cacheKey] = cache;
         }
+      })
+    });
+  });
+
+  server.use(restify.bodyParser());
+  server.post('/raw-request/:id/:private_token', function(req, res, next) {
+    res.charSet('utf-8');
+    if (checkInt(req.params.id, "User ID", res)) {
+      return;
+    }
+    if (checkAPIRequest(req, res)) {
+      return;
+    }
+    if (!req.body.api) {
+      res.send(501, "Non-api raw request is currently not implemented.");
+      return;
+    }
+    var options = {
+      url: 'http://android-1-1.hkgolden.com' + req.body.path,
+      headers: {
+        'User-Agent': 'Mozilla/5.0'
+      }
+    };
+    if (req.body.post) {
+      options.form = req.body.rp.urlParams;
+    }
+    delayedFunctionRun("hkg_api", function() {
+      request(options, function(error, response, body) {
+        if (error || response.statusCode != 200) {
+          res.send(502, "Server has received an invalid response from upstream.");
+          return;
+        }
+        res.send(JSON.parse(body));
       })
     });
   });
