@@ -290,12 +290,12 @@ env("", function(errors, window) {
     delayedFunctionRun("hkg_desktop", function() {
       request(options, function(error, response, body) {
         if (error || response.statusCode != 200) {
-          sendToAllResponses(req.params.id, 502, "Server has received an invalid response from upstream.");
+          sendToAllResponses(req.params.id, 503, "Server has received an invalid response from upstream.");
           return;
         }
         var websiteField = $(body).find("#ctl00_ContentPlaceHolder1_lb_website");
         if (!websiteField.length) {
-          sendToAllResponses(req.params.id, 502, "Server has received an invalid response from upstream.");
+          sendToAllResponses(req.params.id, 503, "Server has received an invalid response from upstream.");
           return;
         }
         var publicToken = websiteField.text().trim();
@@ -351,7 +351,7 @@ env("", function(errors, window) {
     delayedFunctionRun("hkg_api", function() {
       request(options, function(error, response, body) {
         if (error || response.statusCode != 200) {
-          sendToAllResponses(cacheKey, 502, "Server has received an invalid response from upstream.");
+          sendToAllResponses(cacheKey, 503, "Server has received an invalid response from upstream.");
           return;
         }
         var cache = {
@@ -416,7 +416,7 @@ env("", function(errors, window) {
     delayedFunctionRun("hkg_api", function() {
       request(options, function(error, response, body) {
         if (error || response.statusCode != 200) {
-          sendToAllResponses(cacheKey, 502, "Server has received an invalid response from upstream.");
+          sendToAllResponses(cacheKey, 503, "Server has received an invalid response from upstream.");
           return;
         }
         var cache = {
@@ -454,13 +454,13 @@ env("", function(errors, window) {
         'User-Agent': 'Mozilla/5.0'
       }
     };
-    if (req.body.post) {
+    if ("rp" in req.body) {
       options.form = req.body.rp.urlParams;
     }
     delayedFunctionRun("hkg_api", function() {
       request(options, function(error, response, body) {
         if (error || response.statusCode != 200) {
-          res.send(502, "Server has received an invalid response from upstream.");
+          res.send(503, "Server has received an invalid response from upstream.");
           return;
         }
         res.send(JSON.parse(body));
