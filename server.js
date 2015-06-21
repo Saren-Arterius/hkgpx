@@ -21,7 +21,7 @@ var functionMinInterval = {
 };
 var rateLimitFieldsResetIntervals = {
   "account_action": 180 * 1000,
-  "hkg_api_access": 300 * 1000
+  "hkg_api_access": 120 * 1000
 };
 var lastSaveDb = 0;
 
@@ -124,7 +124,6 @@ var saveDb = function() {
     if (err) {
       return console.log(err);
     }
-    console.log("Db was saved!");
   })
 };
 
@@ -158,11 +157,10 @@ var saveLog = function() {
     if (err) {
       return console.log(err);
     }
-    console.log("Log was saved!");
   });
   if (lfn != logLastFileName) {
     log = {
-      "raw_requests": [],
+      "raw_requests": []
     };
   }
   logLastFileName = lfn;
@@ -225,6 +223,7 @@ var checkRateLimit = function(field, key, max) {
 
 for (var key in rateLimitFieldsResetIntervals) {
   (function(key) {
+    resetRateLimit(key);
     setInterval(function() {
       resetRateLimit(key);
     }, rateLimitFieldsResetIntervals[key]);
@@ -236,10 +235,11 @@ setInterval(function() {
   var now = Date.now();
   var modified = false;
   for (var id in db["accounts"]) {
-    if (db["accounts"][id]["verified"] &&
-      "destroy_if_not_verified_after" in db["accounts"][id]) {
-      modified = true;
-      delete db["accounts"][id]["destroy_if_not_verified_after"];
+    if (db["accounts"][id]["verified"]) {
+      if ("destroy_if_not_verified_after" in db["accounts"][id]) {
+        modified = true;
+        delete db["accounts"][id]["destroy_if_not_verified_after"];
+      }
       continue;
     }
     if (db["accounts"][id]["destroy_if_not_verified_after"] > now) {
@@ -517,6 +517,14 @@ env("", function(errors, window) {
     if ("cookies" in req.body) {
       options.headers["Cookie"] = req.body.cookies;
     }
+    var reqLog = {
+      "user_id": req.params.id,
+      "request_ip": req.headers["x-real-ip"],
+      "request": options,
+      "timestamp": Date.now()
+    }
+    log.raw_requests.push(reqLog);
+    saveLog();
     delayedFunctionRun(req.body.api ? "hkg_api" : "hkg_desktop", function() {
       request(options, function(error, response, body) {
         if (error || response.statusCode != 200) {
@@ -527,14 +535,7 @@ env("", function(errors, window) {
         res.end(body);
       })
     });
-    var reqLog = {
-      "user_id": req.params.id,
-      "request_ip": req.headers["x-real-ip"],
-      "request": options,
-      "timestamp": Date.now()
-    }
-    log.raw_requests.push(reqLog);
-    saveLog();
+
   });
 
 
