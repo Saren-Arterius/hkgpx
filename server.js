@@ -178,7 +178,6 @@ var sendToAllResponses = function(cacheKey, responseCode, body) {
   for (var i in pendingResponses[cacheKey]) {
     var pRes = pendingResponses[cacheKey][i];
     pRes.send(responseCode, body);
-    p
   }
   pendingResponses[cacheKey] = [];
 }
@@ -364,11 +363,13 @@ env("", function(errors, window) {
     var now = Date.now();
     if (cacheKey in caches && caches[cacheKey]["expires"] >= now) {
       res.send(caches[cacheKey]["data"]);
+      console.log("Cache hit: {}".format(cacheKey));
       return;
     }
     if (!addPendingResponse(cacheKey, res)) {
       return;
     }
+    console.log("Requesting: {}".format(cacheKey));
     var options = {
       url: 'http://android-1-1.hkgolden.com/newTopics.aspx?s={}&user_id={}&type={}&page={}&returntype=json'.format(
         apiKey(req.params.id), req.params.id, req.params.forum, req.params.page
@@ -378,6 +379,7 @@ env("", function(errors, window) {
       }
     };
     delayedFunctionRun("hkg_api", function() {
+
       request(options, function(error, response, body) {
         if (error || response.statusCode != 200) {
           sendToAllResponses(cacheKey, 503, "Server has received an invalid response from upstream.");
@@ -411,6 +413,7 @@ env("", function(errors, window) {
 
     var cacheKey = "{}-{}".format(req.params.topic_id, page);
     if (cacheKey in db["persistent_cache"]) {
+      console.log("Persistent cache hit: {}".format(cacheKey));
       db["persistent_cache"][cacheKey]["expires"] = Date.now() + HKGOLDEN_PERSISTENT_CACHE_TIME;
       res.send(db["persistent_cache"][cacheKey]["data"]);
       saveDb();
@@ -418,12 +421,14 @@ env("", function(errors, window) {
     }
     var now = Date.now();
     if (cacheKey in caches && caches[cacheKey]["expires"] >= now) {
+      console.log("Cache hit: {}".format(cacheKey));
       res.send(caches[cacheKey]["data"]);
       return;
     }
     if (!addPendingResponse(cacheKey, res)) {
       return;
     }
+    console.log("Requesting: {}".format(cacheKey));
     var start = page == 0 ? 0 : page * POSTS_PER_PAGE + 1;
     var limit = page == 0 ? POSTS_PER_PAGE + 1 : POSTS_PER_PAGE;
 
