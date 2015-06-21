@@ -13,9 +13,7 @@ var HKGOLDEN_CACHE_TIME = 60 * 1000;
 var HKGOLDEN_LONG_CACHE_TIME = 3 * 3600 * 1000;
 var API_ACCESS_RATE_LIMIT_TIMES = 50;
 var dbFilename = path.join(__dirname, "db.json");
-var getLogFilename = function () {
-  return path.join(__dirname, "logs", "{}.json".format(new Date().yyyymmdd()));
-}
+
 
 var functionMinInterval = {
   "hkg_desktop": 3 * 1000,
@@ -26,7 +24,7 @@ var rateLimitFieldsResetIntervals = {
   "hkg_api_access": 300 * 1000
 };
 var lastSaveDb = 0;
-var lastSaveLog = 0;
+
 
 // Misc functions
 Date.prototype.yyyymmdd = function() {
@@ -43,7 +41,6 @@ String.prototype.format = function() {
     return typeof args[i] != 'undefined' ? args[i++] : '';
   });
 };
-
 
 var isInt = function(value) {
   return !isNaN(value) &&
@@ -144,20 +141,36 @@ try {
 }
 
 // log
+var logsPath = path.join(__dirname, "logs");
+var getLogFilename = function() {
+  return path.join(logsPath, "{}.json".format(new Date().yyyymmdd()));
+}
+var logLastFileName = getLogFilename();
+var lastSaveLog = 0;
+
 var saveLog = function() {
   if (Date.now() - lastSaveLog < SAVE_MIN_INTERVAL) {
     return;
   }
   lastSaveLog = Date.now();
   var lfn = getLogFilename();
-  fs.mkdirSync(path.dirname(lfn));
   fs.writeFile(lfn, JSON.stringify(log), function(err) {
     if (err) {
       return console.log(err);
     }
     console.log("Log was saved!");
-  })
+  });
+  if (lfn != logLastFileName) {
+    log = {
+      "raw_requests": [],
+    };
+  }
+  logLastFileName = lfn;
 };
+
+if (!fs.existsSync(logsPath)) {
+  fs.mkdirSync(logsPath);
+}
 
 try {
   var log = JSON.parse(fs.readFileSync(getLogFilename()));
@@ -201,6 +214,7 @@ var checkRateLimit = function(field, key, max) {
     saveDb();
     return true;
   }
+  console.log("({}) {}: {}".format(field, key, db["rate_limit"][field][key]));
   if (db["rate_limit"][field][key] + 1 > max) {
     return false;
   }
