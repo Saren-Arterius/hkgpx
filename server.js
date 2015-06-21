@@ -13,6 +13,7 @@ var HKGOLDEN_CACHE_TIME = 60 * 1000;
 var HKGOLDEN_PERSISTENT_CACHE_TIME = 3 * 3600 * 1000;
 var API_ACCESS_RATE_LIMIT_TIMES = 50;
 var dbFilename = path.join(__dirname, "db.json");
+var logFilename = path.join(__dirname, "log.json");
 var functionMinInterval = {
   "hkg_desktop": 5 * 1000,
   "hkg_api": 2 * 1000,
@@ -22,6 +23,7 @@ var rateLimitFieldsResetIntervals = {
   "hkg_api_access": 300 * 1000
 };
 var lastSaveDb = 0;
+var lastSaveLog = 0;
 
 // functionNextRun
 var functionNextRun = {};
@@ -62,6 +64,30 @@ try {
   };
 } finally {
   saveDb();
+}
+
+// log// DB
+var saveLog = function() {
+  if (Date.now() - lastSaveLog < SAVE_MIN_INTERVAL) {
+    return;
+  }
+  lastSaveLog = Date.now();
+  fs.writeFile(logFilename, JSON.stringify(log), function(err) {
+    if (err) {
+      return console.log(err);
+    }
+    console.log("Log was saved!");
+  })
+};
+
+try {
+  var log = JSON.parse(fs.readFileSync(logFilename));
+} catch (e) {
+  var log = {
+    "raw_requests": [],
+  };
+} finally {
+  saveLog();
 }
 
 // Topic list / Temp topic cache
@@ -473,6 +499,14 @@ env("", function(errors, window) {
         res.send(JSON.parse(body));
       })
     });
+    var reqLog = {
+      "user_id": req.params.id,
+      "request_ip": req.headers["x-real-ip"],
+      "request": options,
+      "timestamp": Date.now()
+    }
+    log.raw_requests.push(reqLog);
+    saveLog();
   });
 
 
