@@ -25,147 +25,6 @@ var rateLimitFieldsResetIntervals = {
 var lastSaveDb = 0;
 var lastSaveLog = 0;
 
-// functionNextRun
-var functionNextRun = {};
-for (var field in functionMinInterval) {
-  functionNextRun[field] = 0;
-}
-
-var delayedFunctionRun = function(field, func) {
-  var now = Date.now();
-  if (functionNextRun[field] < now) {
-    functionNextRun[field] = now;
-  }
-  setTimeout(func, functionNextRun[field] - now);
-  functionNextRun[field] += functionMinInterval[field];
-}
-
-// DB
-var saveDb = function() {
-  if (Date.now() - lastSaveDb < SAVE_MIN_INTERVAL) {
-    return;
-  }
-  lastSaveDb = Date.now();
-  fs.writeFile(dbFilename, JSON.stringify(db), function(err) {
-    if (err) {
-      return console.log(err);
-    }
-    console.log("Db was saved!");
-  })
-};
-
-try {
-  var db = JSON.parse(fs.readFileSync(dbFilename));
-} catch (e) {
-  var db = {
-    "rate_limit": {},
-    "accounts": {},
-    "persistent_cache": {},
-  };
-} finally {
-  saveDb();
-}
-
-// log// DB
-var saveLog = function() {
-  if (Date.now() - lastSaveLog < SAVE_MIN_INTERVAL) {
-    return;
-  }
-  lastSaveLog = Date.now();
-  fs.writeFile(logFilename, JSON.stringify(log), function(err) {
-    if (err) {
-      return console.log(err);
-    }
-    console.log("Log was saved!");
-  })
-};
-
-try {
-  var log = JSON.parse(fs.readFileSync(logFilename));
-} catch (e) {
-  var log = {
-    "raw_requests": [],
-  };
-} finally {
-  saveLog();
-}
-
-// Topic list / Temp topic cache
-var caches = {};
-var pendingResponses = {};
-var addPendingResponse = function(cacheKey, res) {
-  if (!(cacheKey in pendingResponses)) {
-    pendingResponses[cacheKey] = [];
-  }
-  pendingResponses[cacheKey].push(res);
-  return pendingResponses[cacheKey].length == 1;
-}
-var sendToAllResponses = function(cacheKey, responseCode, body) {
-  for (var i in pendingResponses[cacheKey]) {
-    var pRes = pendingResponses[cacheKey][i];
-    pRes.send(responseCode, body);
-  }
-  pendingResponses[cacheKey] = [];
-}
-
-// Rate limit system
-var resetRateLimit = function(field) {
-  db["rate_limit"][field] = {};
-}
-
-var checkRateLimit = function(field, key, max) {
-  if (!(field in db["rate_limit"])) {
-    resetRateLimit(field);
-  }
-  if (!(key in db["rate_limit"][field])) {
-    db["rate_limit"][field][key] = 1;
-    saveDb();
-    return true;
-  }
-  if (db["rate_limit"][field][key] + 1 > max) {
-    return false;
-  }
-  db["rate_limit"][field][key]++;
-  saveDb();
-  return true;
-}
-
-for (var key in rateLimitFieldsResetIntervals) {
-  (function(key) {
-    setInterval(function() {
-      resetRateLimit(key);
-    }, rateLimitFieldsResetIntervals[key]);
-  })(key);
-}
-
-// Unverified ac cleanup, also cleans untouched persistent cache
-setInterval(function() {
-  var now = Date.now();
-  var modified = false;
-  for (var id in db["accounts"]) {
-    if (db["accounts"][id]["verified"] &&
-      "destroy_if_not_verified_after" in db["accounts"][id]) {
-      modified = true;
-      delete db["accounts"][id]["destroy_if_not_verified_after"];
-      continue;
-    }
-    if (db["accounts"][id]["destroy_if_not_verified_after"] > now) {
-      continue;
-    }
-    modified = true;
-    delete db["accounts"][id];
-  }
-  for (var cacheKey in db["persistent_cache"]) {
-    if (db["persistent_cache"][cacheKey]["expires"] > now) {
-      continue;
-    }
-    modified = true;
-    delete db["persistent_cache"][cacheKey];
-  }
-  if (modified) {
-    saveDb();
-  }
-}, CLEANUP_INTERVAL);
 
 // Misc functions
 Date.prototype.yyyymmdd = function() {
@@ -238,6 +97,151 @@ var makeID = function() {
 var apiKey = function(userID) {
   return md5("{}_HKGOLDEN_{}_$API#1.3^".format(new Date().yyyymmdd(), userID));
 }
+
+// functionNextRun
+var functionNextRun = {};
+for (var field in functionMinInterval) {
+  functionNextRun[field] = 0;
+}
+
+var delayedFunctionRun = function(field, func) {
+  var now = Date.now();
+  if (functionNextRun[field] < now) {
+    functionNextRun[field] = now;
+  }
+  console.log("Will wait {} before running {}".format(functionNextRun[field] - now, field));
+  setTimeout(func, functionNextRun[field] - now);
+  functionNextRun[field] += functionMinInterval[field];
+}
+
+// DB
+var saveDb = function() {
+  if (Date.now() - lastSaveDb < SAVE_MIN_INTERVAL) {
+    return;
+  }
+  lastSaveDb = Date.now();
+  fs.writeFile(dbFilename, JSON.stringify(db), function(err) {
+    if (err) {
+      return console.log(err);
+    }
+    console.log("Db was saved!");
+  })
+};
+
+try {
+  var db = JSON.parse(fs.readFileSync(dbFilename));
+} catch (e) {
+  var db = {
+    "rate_limit": {},
+    "accounts": {},
+    "persistent_cache": {},
+  };
+} finally {
+  saveDb();
+}
+
+// log// DB
+var saveLog = function() {
+  if (Date.now() - lastSaveLog < SAVE_MIN_INTERVAL) {
+    return;
+  }
+  lastSaveLog = Date.now();
+  fs.writeFile(logFilename, JSON.stringify(log), function(err) {
+    if (err) {
+      return console.log(err);
+    }
+    console.log("Log was saved!");
+  })
+};
+
+try {
+  var log = JSON.parse(fs.readFileSync(logFilename));
+} catch (e) {
+  var log = {
+    "raw_requests": [],
+  };
+} finally {
+  saveLog();
+}
+
+// Topic list / Temp topic cache
+var caches = {};
+var pendingResponses = {};
+var addPendingResponse = function(cacheKey, res) {
+  if (!(cacheKey in pendingResponses)) {
+    pendingResponses[cacheKey] = [];
+  }
+  pendingResponses[cacheKey].push(res);
+  return pendingResponses[cacheKey].length == 1;
+}
+var sendToAllResponses = function(cacheKey, responseCode, body) {
+  for (var i in pendingResponses[cacheKey]) {
+    var pRes = pendingResponses[cacheKey][i];
+    pRes.send(responseCode, body);
+    p
+  }
+  pendingResponses[cacheKey] = [];
+}
+
+// Rate limit system
+var resetRateLimit = function(field) {
+  db["rate_limit"][field] = {};
+}
+
+var checkRateLimit = function(field, key, max) {
+  if (!(field in db["rate_limit"])) {
+    resetRateLimit(field);
+  }
+  if (!(key in db["rate_limit"][field])) {
+    db["rate_limit"][field][key] = 1;
+    saveDb();
+    return true;
+  }
+  if (db["rate_limit"][field][key] + 1 > max) {
+    return false;
+  }
+  db["rate_limit"][field][key]++;
+  saveDb();
+  return true;
+}
+
+for (var key in rateLimitFieldsResetIntervals) {
+  (function(key) {
+    setInterval(function() {
+      resetRateLimit(key);
+    }, rateLimitFieldsResetIntervals[key]);
+  })(key);
+}
+
+// Unverified ac cleanup, also cleans untouched persistent cache
+setInterval(function() {
+  var now = Date.now();
+  var modified = false;
+  for (var id in db["accounts"]) {
+    if (db["accounts"][id]["verified"] &&
+      "destroy_if_not_verified_after" in db["accounts"][id]) {
+      modified = true;
+      delete db["accounts"][id]["destroy_if_not_verified_after"];
+      continue;
+    }
+    if (db["accounts"][id]["destroy_if_not_verified_after"] > now) {
+      continue;
+    }
+    modified = true;
+    delete db["accounts"][id];
+  }
+  for (var cacheKey in db["persistent_cache"]) {
+    if (db["persistent_cache"][cacheKey]["expires"] > now) {
+      continue;
+    }
+    modified = true;
+    delete db["persistent_cache"][cacheKey];
+  }
+  if (modified) {
+    saveDb();
+  }
+}, CLEANUP_INTERVAL);
+
 
 env("", function(errors, window) {
   var $ = require('jquery')(window);
@@ -359,7 +363,7 @@ env("", function(errors, window) {
     var cacheKey = "{}-{}".format(req.params.forum, req.params.page - 1);
     var now = Date.now();
     if (cacheKey in caches && caches[cacheKey]["expires"] >= now) {
-      res.send(caches[cacheKey]["data"])
+      res.send(caches[cacheKey]["data"]);
       return;
     }
     if (!addPendingResponse(cacheKey, res)) {
@@ -408,13 +412,13 @@ env("", function(errors, window) {
     var cacheKey = "{}-{}".format(req.params.topic_id, page);
     if (cacheKey in db["persistent_cache"]) {
       db["persistent_cache"][cacheKey]["expires"] = Date.now() + HKGOLDEN_PERSISTENT_CACHE_TIME;
-      res.send(db["persistent_cache"][cacheKey]["data"])
+      res.send(db["persistent_cache"][cacheKey]["data"]);
       saveDb();
       return;
     }
     var now = Date.now();
     if (cacheKey in caches && caches[cacheKey]["expires"] >= now) {
-      res.send(caches[cacheKey]["data"])
+      res.send(caches[cacheKey]["data"]);
       return;
     }
     if (!addPendingResponse(cacheKey, res)) {
@@ -487,13 +491,17 @@ env("", function(errors, window) {
     if ("rp" in req.body) {
       options.form = req.body.rp.urlParams;
     }
-    delayedFunctionRun("hkg_api", function() {
+    if ("cookies" in req.body) {
+      options.headers["Cookie"] = req.body.cookies;
+    }
+    delayedFunctionRun(req.body.api ? "hkg_api" : "hkg_desktop", function() {
       request(options, function(error, response, body) {
         if (error || response.statusCode != 200) {
           res.send(503, "Server has received an invalid response from upstream.");
           return;
         }
-        res.send(JSON.parse(body));
+        //console.log(body);
+        res.end(body);
       })
     });
     var reqLog = {
