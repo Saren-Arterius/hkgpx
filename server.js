@@ -15,8 +15,8 @@ var API_ACCESS_RATE_LIMIT_TIMES = 50;
 var dbFilename = path.join(__dirname, "db.json");
 var logFilename = path.join(__dirname, "log.json");
 var functionMinInterval = {
-  "hkg_desktop": 5 * 1000,
-  "hkg_api": 2 * 1000,
+  "hkg_desktop": 3 * 1000,
+  "hkg_api": 1 * 1000,
 };
 var rateLimitFieldsResetIntervals = {
   "account_action": 180 * 1000,
@@ -477,12 +477,9 @@ env("", function(errors, window) {
     if (checkAPIRequest(req, res)) {
       return;
     }
-    if (!req.body.api) {
-      res.send(501, "Non-api raw request is currently not implemented.");
-      return;
-    }
     var options = {
-      url: 'http://android-1-1.hkgolden.com' + req.body.path,
+      url: (req.body.api ? "http://android-1-1.hkgolden.com" :
+        "http://forum15.hkgolden.com") + req.body.path,
       headers: {
         'User-Agent': 'Mozilla/5.0'
       }
