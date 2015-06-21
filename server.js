@@ -10,10 +10,13 @@ var POSTS_PER_PAGE = 25;
 var SAVE_MIN_INTERVAL = 5 * 1000;
 var CLEANUP_INTERVAL = 600 * 1000;
 var HKGOLDEN_CACHE_TIME = 60 * 1000;
-var HKGOLDEN_PERSISTENT_CACHE_TIME = 3 * 3600 * 1000;
+var HKGOLDEN_LONG_CACHE_TIME = 3 * 3600 * 1000;
 var API_ACCESS_RATE_LIMIT_TIMES = 50;
 var dbFilename = path.join(__dirname, "db.json");
-var logFilename = path.join(__dirname, "log.json");
+var getLogFilename = function () {
+  return path.join(__dirname, "logs", "{}.json".format(new Date().yyyymmdd()));
+}
+
 var functionMinInterval = {
   "hkg_desktop": 3 * 1000,
   "hkg_api": 1 * 1000,
@@ -24,7 +27,6 @@ var rateLimitFieldsResetIntervals = {
 };
 var lastSaveDb = 0;
 var lastSaveLog = 0;
-
 
 // Misc functions
 Date.prototype.yyyymmdd = function() {
@@ -41,6 +43,7 @@ String.prototype.format = function() {
     return typeof args[i] != 'undefined' ? args[i++] : '';
   });
 };
+
 
 var isInt = function(value) {
   return !isNaN(value) &&
@@ -134,19 +137,21 @@ try {
   var db = {
     "rate_limit": {},
     "accounts": {},
-    "persistent_cache": {},
+    "long_cache": {},
   };
 } finally {
   saveDb();
 }
 
-// log// DB
+// log
 var saveLog = function() {
   if (Date.now() - lastSaveLog < SAVE_MIN_INTERVAL) {
     return;
   }
   lastSaveLog = Date.now();
-  fs.writeFile(logFilename, JSON.stringify(log), function(err) {
+  var lfn = getLogFilename();
+  fs.mkdirSync(path.dirname(lfn));
+  fs.writeFile(lfn, JSON.stringify(log), function(err) {
     if (err) {
       return console.log(err);
     }
@@ -155,7 +160,7 @@ var saveLog = function() {
 };
 
 try {
-  var log = JSON.parse(fs.readFileSync(logFilename));
+  var log = JSON.parse(fs.readFileSync(getLogFilename()));
 } catch (e) {
   var log = {
     "raw_requests": [],
@@ -212,7 +217,7 @@ for (var key in rateLimitFieldsResetIntervals) {
   })(key);
 }
 
-// Unverified ac cleanup, also cleans untouched persistent cache
+// Unverified ac cleanup, also cleans untouched long cache
 setInterval(function() {
   var now = Date.now();
   var modified = false;
@@ -229,12 +234,12 @@ setInterval(function() {
     modified = true;
     delete db["accounts"][id];
   }
-  for (var cacheKey in db["persistent_cache"]) {
-    if (db["persistent_cache"][cacheKey]["expires"] > now) {
+  for (var cacheKey in db["long_cache"]) {
+    if (db["long_cache"][cacheKey]["expires"] > now) {
       continue;
     }
     modified = true;
-    delete db["persistent_cache"][cacheKey];
+    delete db["long_cache"][cacheKey];
   }
   if (modified) {
     saveDb();
@@ -379,7 +384,6 @@ env("", function(errors, window) {
       }
     };
     delayedFunctionRun("hkg_api", function() {
-
       request(options, function(error, response, body) {
         if (error || response.statusCode != 200) {
           sendToAllResponses(cacheKey, 503, "Server has received an invalid response from upstream.");
@@ -412,10 +416,10 @@ env("", function(errors, window) {
     var page = req.params.page - 1;
 
     var cacheKey = "{}-{}".format(req.params.topic_id, page);
-    if (cacheKey in db["persistent_cache"]) {
-      console.log("Persistent cache hit: {}".format(cacheKey));
-      db["persistent_cache"][cacheKey]["expires"] = Date.now() + HKGOLDEN_PERSISTENT_CACHE_TIME;
-      res.send(db["persistent_cache"][cacheKey]["data"]);
+    if (cacheKey in db["long_cache"]) {
+      console.log("Long cache hit: {}".format(cacheKey));
+      db["long_cache"][cacheKey]["expires"] = Date.now() + HKGOLDEN_LONG_CACHE_TIME;
+      res.send(db["long_cache"][cacheKey]["data"]);
       saveDb();
       return;
     }
@@ -458,8 +462,8 @@ env("", function(errors, window) {
         }
         sendToAllResponses(cacheKey, 200, cache["data"]);
         if (cache["data"]["messages"].length == limit) {
-          cache["expires"] = Date.now() + HKGOLDEN_PERSISTENT_CACHE_TIME;
-          db["persistent_cache"][cacheKey] = cache;
+          cache["expires"] = Date.now() + HKGOLDEN_LONG_CACHE_TIME;
+          db["long_cache"][cacheKey] = cache;
           saveDb();
         } else {
           cache["expires"] = Date.now() + HKGOLDEN_CACHE_TIME;
