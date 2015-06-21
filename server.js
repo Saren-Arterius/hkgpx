@@ -12,6 +12,7 @@ var CLEANUP_INTERVAL = 600 * 1000;
 var HKGOLDEN_CACHE_TIME = 60 * 1000;
 var HKGOLDEN_LONG_CACHE_TIME = 3 * 3600 * 1000;
 var API_ACCESS_RATE_LIMIT_TIMES = 50;
+var FRIEND_USER_IDS = [505042];
 var dbFilename = path.join(__dirname, "db.json");
 
 
@@ -73,13 +74,20 @@ var checkAPIRequest = function(req, res) {
     res.send(400, "Account is not yet verified.");
     return true;
   }
-  if (!checkRateLimit("hkg_api_access", req.params.private_token, API_ACCESS_RATE_LIMIT_TIMES)) {
+  if (!checkRateLimit("account_action", req.headers["x-real-ip"], 10, false)) {
     res.send(429, "Rate limit exceeded.");
-    return true;
+    return;
   }
   if (req.params.private_token !== db["accounts"][req.params.id]["private_token"]) {
     res.send(400, "Private token mismatch.");
+    checkRateLimit("account_action", req.headers["x-real-ip"], 10, true);
     return true;
+  }
+  if (FRIEND_USER_IDS.indexOf(req.params.id) !== -1) {
+    if (!checkRateLimit("hkg_api_access", req.params.private_token, API_ACCESS_RATE_LIMIT_TIMES, true)) {
+      res.send(429, "Rate limit exceeded.");
+      return true;
+    }
   }
   return false;
 }
@@ -203,7 +211,7 @@ var resetRateLimit = function(field) {
   db["rate_limit"][field] = {};
 }
 
-var checkRateLimit = function(field, key, max) {
+var checkRateLimit = function(field, key, max, add) {
   if (!(field in db["rate_limit"])) {
     resetRateLimit(field);
   }
@@ -212,12 +220,14 @@ var checkRateLimit = function(field, key, max) {
     saveDb();
     return true;
   }
-  console.log("({}) {}: {}".format(field, key, db["rate_limit"][field][key]));
   if (db["rate_limit"][field][key] + 1 > max) {
     return false;
   }
-  db["rate_limit"][field][key]++;
-  saveDb();
+  if (add) {
+    db["rate_limit"][field][key]++;
+    saveDb();
+    console.log("({}) {}: {}".format(field, key, db["rate_limit"][field][key]));
+  }
   return true;
 }
 
@@ -274,7 +284,7 @@ env("", function(errors, window) {
       res.send(400, "Private token's length must be 32.");
       return;
     }
-    if (!checkRateLimit("account_action", req.headers["x-real-ip"], 10)) {
+    if (!checkRateLimit("account_action", req.headers["x-real-ip"], 10, true)) {
       res.send(429, "Rate limit exceeded.");
       return;
     }
@@ -313,7 +323,7 @@ env("", function(errors, window) {
       res.send(400, "Account does not exist.");
       return;
     }
-    if (!checkRateLimit("account_action", req.headers["x-real-ip"], 10)) {
+    if (!checkRateLimit("account_action", req.headers["x-real-ip"], 10, true)) {
       res.send(429, "Rate limit exceeded.");
       return;
     }
