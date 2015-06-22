@@ -17,11 +17,11 @@
     "type": "git",
     "url": "git+https://github.com/Saren-Arterius/hkgpx.git"
   },
-  "author": "",
+  "author": "Saren",
   "license": "ISC",
   "bugs": {
     "url": "https://github.com/Saren-Arterius/hkgpx/issues"
   },
   "homepage": "https://github.com/Saren-Arterius/hkgpx#readme",
-  "description": ""
+  "description": "HKGolden proxy server"
 }
