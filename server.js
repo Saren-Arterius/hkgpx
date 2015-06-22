@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 var restify = require('restify');
 var env = require('jsdom').env;
 var request = require('request');
@@ -8,6 +9,7 @@ var md5 = require('MD5');
 var zlib = require('zlib');
 
 // ======= CHANGE THINGS BELOW =======
+var BIND_ADDRESS = process.env.OPENSHIFT_NODEJS_IP || "0.0.0.0";
 var SERVER_PORT = process.env.OPENSHIFT_NODEJS_PORT || process.env.PORT || 8888; // http://127.0.0.1:8888
 
 var POSTS_PER_PAGE = 25; // Do not change
@@ -40,6 +42,11 @@ var RATE_LIMIT_RESET_INTERVALS = {
   "account_action": 180 * 1000,
   "hkg_access": 300 * 1000
 };
+
+var VALID_FORUMS = ["ET", "CA", "FN", "GM", "HW", "IN", "SW", "MP", "AP",
+  "SP", "LV", "SY", "ED", "BB", "PT", "TR", "CO", "AN", "TO", "MU", "VI",
+  "DC", "ST", "WK", "TS", "RA", "MB", "AC", "JT", "EP", "BW"
+];
 // ======= CHANGE THINGS ABOVE =======
 
 // Misc functions
@@ -304,7 +311,9 @@ setInterval(function() {
 
 env("", function(errors, window) {
   var $ = require('jquery')(window);
-  var server = restify.createServer();
+  var server = restify.createServer({
+    name: "HKGPX"
+  });
 
   server.put('/new-account/:id/:private_token', function(req, res, next) {
     res.charSet('utf-8');
@@ -350,7 +359,8 @@ env("", function(errors, window) {
     res.charSet('utf-8');
     if (checkInt(req.params.id, "ID", res)) {
       return;
-v    }
+      v
+    }
     if (req.params.private_token.length != 32) {
       res.send(400, "Private token's length must be 32.");
       return;
@@ -404,11 +414,6 @@ v    }
     });
   });
 
-  var validForums = ["ET", "CA", "FN", "GM", "HW", "IN", "SW", "MP", "AP",
-    "SP", "LV", "SY", "ED", "BB", "PT", "TR", "CO", "AN", "TO", "MU", "VI",
-    "DC", "ST", "WK", "TS", "RA", "MB", "AC", "JT", "EP", "BW"
-  ];
-
   server.get('/topic-list/:forum/:page/:id/:private_token', function(req, res, next) {
     res.charSet('utf-8');
     if (checkInt(req.params.id, "ID", res)) {
@@ -417,7 +422,7 @@ v    }
     if (checkInt(req.params.page, "Page", res)) {
       return;
     }
-    if (validForums.indexOf(req.params.forum) === -1) {
+    if (VALID_FORUMS.indexOf(req.params.forum) === -1) {
       res.send(400, "Forum is not valid.");
       return;
     }
@@ -611,9 +616,9 @@ v    }
 
   });
 
-
-  server.listen(SERVER_PORT, process.env.OPENSHIFT_NODEJS_IP || "0.0.0.0", function() {
-    console.log('%s listening at %s', "HKGPX", server.url);
+  console.log("{}:{}".format(BIND_ADDRESS, SERVER_PORT));
+  server.listen(SERVER_PORT, BIND_ADDRESS, function() {
+    console.log('%s listening at %s', server.name, server.url);
   });
 
 
