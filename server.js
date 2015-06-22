@@ -6,6 +6,8 @@ var path = require('path');
 var md5 = require('MD5');
 
 // ======= CHANGE THINGS BELOW =======
+var SERVER_PORT = 8888; // http://127.0.0.1:8888
+
 var POSTS_PER_PAGE = 25; // Do not change
 var SAVE_MIN_INTERVAL = 5 * 1000; // There will be at least 5 seconds between DB and logs saving
 var CLEANUP_INTERVAL = 600 * 1000; // Clean up unverified accounts && unused long topic cache
@@ -588,8 +590,8 @@ env("", function(errors, window) {
   });
 
 
-  server.listen(8888, function() {
-    console.log('%s listening at %s', server.name, server.url);
+  server.listen(SERVER_PORT, function() {
+    console.log('%s listening at %s', "HKGPX", server.url);
   });
 
 
