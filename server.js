@@ -612,7 +612,7 @@ v    }
   });
 
 
-  server.listen(SERVER_PORT, process.env.OPENSHIFT_NODEJS_IP || "127.0.0.1", function() {
+  server.listen(SERVER_PORT, process.env.OPENSHIFT_NODEJS_IP || "0.0.0.0", function() {
     console.log('%s listening at %s', "HKGPX", server.url);
   });
 
