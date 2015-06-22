@@ -8,7 +8,7 @@ var md5 = require('MD5');
 var zlib = require('zlib');
 
 // ======= CHANGE THINGS BELOW =======
-var SERVER_PORT = process.env.PORT || 8888; // http://127.0.0.1:8888
+var SERVER_PORT = process.env.OPENSHIFT_NODEJS_PORT || process.env.PORT || 8888; // http://127.0.0.1:8888
 
 var POSTS_PER_PAGE = 25; // Do not change
 var SAVE_MIN_INTERVAL = 5 * 1000; // There will be at least 5 seconds between DB and logs saving
@@ -350,7 +350,7 @@ env("", function(errors, window) {
     res.charSet('utf-8');
     if (checkInt(req.params.id, "ID", res)) {
       return;
-    }
+v    }
     if (req.params.private_token.length != 32) {
       res.send(400, "Private token's length must be 32.");
       return;
