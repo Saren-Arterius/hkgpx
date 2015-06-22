@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-
 var restify = require('restify');
 var env = require('jsdom').env;
 var request = require('request');
@@ -137,29 +136,42 @@ var delayedFunctionRun = function(field, func) {
 
 // DB
 var dbFilename = path.join(__dirname, "db.gz");
+var dbFilenameJson = path.join(__dirname, "db.json");
 var lastSaveDb = 0;
 
 var saveDb = function() {
   if (Date.now() - lastSaveDb < SAVE_MIN_INTERVAL) {
     return;
   }
-
   lastSaveDb = Date.now();
-  fs.writeFile(dbFilename, zlib.gzipSync(JSON.stringify(db)), function(err) {
-    if (err) {
-      return console.log(err);
-    }
-  })
+  try {
+    fs.writeFile(dbFilename, zlib.gzipSync(JSON.stringify(db)), function(err) {
+      if (err) {
+        return console.log(err);
+      }
+    })
+  } catch (e) {
+    fs.writeFile(dbFilenameJson, JSON.stringify(db), function(err) {
+      if (err) {
+        return console.log(err);
+      }
+    })
+  }
 };
 
+var db;
 try {
-  var db = JSON.parse(zlib.gunzipSync(fs.readFileSync(dbFilename)));
+  db = JSON.parse(zlib.gunzipSync(fs.readFileSync(dbFilename)));
 } catch (e) {
-  var db = {
-    "rate_limit": {},
-    "accounts": {},
-    "long_cache": {},
-  };
+  try {
+    db = JSON.parse(fs.readFileSync(dbFilenameJson));
+  } catch (e) {
+    var db = {
+      "rate_limit": {},
+      "accounts": {},
+      "long_cache": {},
+    };
+  }
 } finally {
   saveDb();
 }
