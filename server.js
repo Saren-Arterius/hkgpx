@@ -616,7 +616,6 @@ env("", function(errors, window) {
 
   });
 
-  console.log("{}:{}".format(BIND_ADDRESS, SERVER_PORT));
   server.listen(SERVER_PORT, BIND_ADDRESS, function() {
     console.log('%s listening at %s', server.name, server.url);
   });
