@@ -1,9 +1,12 @@
+#!/usr/bin/env node
+
 var restify = require('restify');
 var env = require('jsdom').env;
 var request = require('request');
 var fs = require('fs');
 var path = require('path');
 var md5 = require('MD5');
+var zlib = require('zlib');
 
 // ======= CHANGE THINGS BELOW =======
 var SERVER_PORT = 8888; // http://127.0.0.1:8888
@@ -14,14 +17,14 @@ var CLEANUP_INTERVAL = 600 * 1000; // Clean up unverified accounts && unused lon
 var HKGOLDEN_CACHE_TIME = 60 * 1000 // Topic list && dynamic topic page cache time &&
 var HKGOLDEN_LONG_CACHE_TIME = 3 * 3600 * 1000; // If a topic page contains at least 25 replies, it is long cache
 /*
-* How frequent can an IP create new account / verify an account in a period
-* It also counts if an IP requests with non-existence account or wrong token to prevent bruce-force.
-*/
+ * How frequent can an IP create new account / verify an account in a period
+ * It also counts if an IP requests with non-existence account or wrong token to prevent bruce-force.
+ */
 var ACCOUNT_ACTION_RATE_LIMIT_TIMES = 10;
 /*
-* How frequent can a user make this server request to HKGolden server in a period
-* It does not count when the user's request has hit the cache.
-*/
+ * How frequent can a user make this server request to HKGolden server in a period
+ * It does not count when the user's request has hit the cache.
+ */
 var API_ACCESS_RATE_LIMIT_TIMES = 50;
 
 var FRIEND_USER_IDS = [505042]; // Friends does not have rate limit
@@ -124,21 +127,25 @@ var delayedFunctionRun = function(field, func) {
   if (functionNextRun[field] < now) {
     functionNextRun[field] = now;
   }
-  console.log("Will wait {} before running {}".format(functionNextRun[field] - now, field));
-  setTimeout(func, functionNextRun[field] - now);
+  var wait = functionNextRun[field] - now;
+  if (wait > 0) {
+    console.log("Will wait {} before running {}".format(wait, field));
+  }
+  setTimeout(func, wait);
   functionNextRun[field] += REQUEST_MIN_INTERVALS[field];
 }
 
 // DB
-var dbFilename = path.join(__dirname, "db.json");
+var dbFilename = path.join(__dirname, "db.gz");
 var lastSaveDb = 0;
 
 var saveDb = function() {
   if (Date.now() - lastSaveDb < SAVE_MIN_INTERVAL) {
     return;
   }
+
   lastSaveDb = Date.now();
-  fs.writeFile(dbFilename, JSON.stringify(db), function(err) {
+  fs.writeFile(dbFilename, zlib.gzipSync(JSON.stringify(db)), function(err) {
     if (err) {
       return console.log(err);
     }
@@ -146,7 +153,7 @@ var saveDb = function() {
 };
 
 try {
-  var db = JSON.parse(fs.readFileSync(dbFilename));
+  var db = JSON.parse(zlib.gunzipSync(fs.readFileSync(dbFilename)));
 } catch (e) {
   var db = {
     "rate_limit": {},
@@ -187,6 +194,7 @@ var saveLog = function() {
 if (!fs.existsSync(logsPath)) {
   fs.mkdirSync(logsPath);
 }
+
 
 try {
   var log = JSON.parse(fs.readFileSync(getLogFilename()));
@@ -425,7 +433,7 @@ env("", function(errors, window) {
 
     console.log("Requesting: {}".format(cacheKey));
     var options = {
-      url: 'http://android-1-1.hkgolden.com/newTopics.aspx?s={}&user_id={}&type={}&page={}&returntype=json'.format(
+      url: 'http://android-1-1.hkgolden.com/newTopics.aspx?s={}&user_id={}&type={}&page={}&filtermode=N&sensormode=N&returntype=json'.format(
         apiKey(req.params.id), req.params.id, req.params.forum, req.params.page
       ),
       headers: {
@@ -504,6 +512,8 @@ env("", function(errors, window) {
         message: req.params.topic_id,
         start: start,
         limit: limit,
+        filtermode: "N",
+        sensormode: "N",
         returntype: "json"
       }
     };
