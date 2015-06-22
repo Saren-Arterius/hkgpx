@@ -5,27 +5,38 @@ var fs = require('fs');
 var path = require('path');
 var md5 = require('MD5');
 
-// Constants
-var POSTS_PER_PAGE = 25;
-var SAVE_MIN_INTERVAL = 5 * 1000;
-var CLEANUP_INTERVAL = 600 * 1000;
-var HKGOLDEN_CACHE_TIME = 60 * 1000;
-var HKGOLDEN_LONG_CACHE_TIME = 3 * 3600 * 1000;
+// ======= CHANGE THINGS BELOW =======
+var POSTS_PER_PAGE = 25; // Do not change
+var SAVE_MIN_INTERVAL = 5 * 1000; // There will be at least 5 seconds between DB and logs saving
+var CLEANUP_INTERVAL = 600 * 1000; // Clean up unverified accounts && unused long topic cache
+var HKGOLDEN_CACHE_TIME = 60 * 1000 // Topic list && dynamic topic page cache time &&
+var HKGOLDEN_LONG_CACHE_TIME = 3 * 3600 * 1000; // If a topic page contains at least 25 replies, it is long cache
+/*
+* How frequent can an IP create new account / verify an account in a period
+* It also counts if an IP requests with non-existence account or wrong token to prevent bruce-force.
+*/
+var ACCOUNT_ACTION_RATE_LIMIT_TIMES = 10;
+/*
+* How frequent can a user make this server request to HKGolden server in a period
+* It does not count when the user's request has hit the cache.
+*/
 var API_ACCESS_RATE_LIMIT_TIMES = 50;
-var FRIEND_USER_IDS = [505042];
-var dbFilename = path.join(__dirname, "db.json");
 
+var FRIEND_USER_IDS = [505042]; // Friends does not have rate limit
+var FRIEND_ONLY_SERVER = false; // true: Only friends can create a new account here
 
-var functionMinInterval = {
-  "hkg_desktop": 3 * 1000,
-  "hkg_api": 1 * 1000,
+// This is to prevent the server from triggering HKGolden's rate limit system to block ourself out.
+var REQUEST_MIN_INTERVALS = {
+  "hkg_desktop": 2 * 1000, // There will be at least 2 seconds between each request to http://forum15.hkgolden.com
+  "hkg_api": 1 * 1000, // There will be at least 1 seconds between each request to HKGolden mobile API
 };
-var rateLimitFieldsResetIntervals = {
+
+// How frequent will rate limits reset
+var RATE_LIMIT_RESET_INTERVALS = {
   "account_action": 180 * 1000,
-  "hkg_api_access": 120 * 1000
+  "hkg_access": 300 * 1000
 };
-var lastSaveDb = 0;
-
+// ======= CHANGE THINGS ABOVE =======
 
 // Misc functions
 Date.prototype.yyyymmdd = function() {
@@ -83,12 +94,6 @@ var checkAPIRequest = function(req, res) {
     checkRateLimit("account_action", req.headers["x-real-ip"], 10, true);
     return true;
   }
-  if (FRIEND_USER_IDS.indexOf(req.params.id) !== -1) {
-    if (!checkRateLimit("hkg_api_access", req.params.private_token, API_ACCESS_RATE_LIMIT_TIMES, true)) {
-      res.send(429, "Rate limit exceeded.");
-      return true;
-    }
-  }
   return false;
 }
 
@@ -108,7 +113,7 @@ var apiKey = function(userID) {
 
 // functionNextRun
 var functionNextRun = {};
-for (var field in functionMinInterval) {
+for (var field in REQUEST_MIN_INTERVALS) {
   functionNextRun[field] = 0;
 }
 
@@ -119,10 +124,13 @@ var delayedFunctionRun = function(field, func) {
   }
   console.log("Will wait {} before running {}".format(functionNextRun[field] - now, field));
   setTimeout(func, functionNextRun[field] - now);
-  functionNextRun[field] += functionMinInterval[field];
+  functionNextRun[field] += REQUEST_MIN_INTERVALS[field];
 }
 
 // DB
+var dbFilename = path.join(__dirname, "db.json");
+var lastSaveDb = 0;
+
 var saveDb = function() {
   if (Date.now() - lastSaveDb < SAVE_MIN_INTERVAL) {
     return;
@@ -218,6 +226,7 @@ var checkRateLimit = function(field, key, max, add) {
   if (!(key in db["rate_limit"][field])) {
     db["rate_limit"][field][key] = 1;
     saveDb();
+    console.log("({}) {}: {}".format(field, key, db["rate_limit"][field][key]));
     return true;
   }
   if (db["rate_limit"][field][key] + 1 > max) {
@@ -231,12 +240,12 @@ var checkRateLimit = function(field, key, max, add) {
   return true;
 }
 
-for (var key in rateLimitFieldsResetIntervals) {
+for (var key in RATE_LIMIT_RESET_INTERVALS) {
   (function(key) {
     resetRateLimit(key);
     setInterval(function() {
       resetRateLimit(key);
-    }, rateLimitFieldsResetIntervals[key]);
+    }, RATE_LIMIT_RESET_INTERVALS[key]);
   })(key);
 }
 
@@ -288,6 +297,11 @@ env("", function(errors, window) {
       res.send(429, "Rate limit exceeded.");
       return;
     }
+    if (FRIEND_ONLY_SERVER && FRIEND_USER_IDS.indexOf(parseInt(req.params.id)) === -1) {
+      res.send(403, "Only friends can create a new account.");
+      return;
+    }
+
     var publicToken = makeID();
     if (req.params.id in db["accounts"]) {
       db["accounts"][req.params.id]["pending_private_token"] = req.params.private_token;
@@ -319,12 +333,12 @@ env("", function(errors, window) {
       res.send(400, "Private token's length must be 32.");
       return;
     }
-    if (!(req.params.id in db["accounts"])) {
-      res.send(400, "Account does not exist.");
-      return;
-    }
     if (!checkRateLimit("account_action", req.headers["x-real-ip"], 10, true)) {
       res.send(429, "Rate limit exceeded.");
+      return;
+    }
+    if (!(req.params.id in db["accounts"])) {
+      res.send(400, "Account does not exist.");
       return;
     }
     if (req.params.private_token !== db["accounts"][req.params.id]["pending_private_token"]) {
@@ -398,6 +412,15 @@ env("", function(errors, window) {
     if (!addPendingResponse(cacheKey, res)) {
       return;
     }
+
+
+    if (FRIEND_USER_IDS.indexOf(parseInt(req.params.id)) === -1) {
+      if (!checkRateLimit("hkg_access", req.params.private_token, API_ACCESS_RATE_LIMIT_TIMES, true)) {
+        res.send(429, "Rate limit exceeded.");
+        return true;
+      }
+    }
+
     console.log("Requesting: {}".format(cacheKey));
     var options = {
       url: 'http://android-1-1.hkgolden.com/newTopics.aspx?s={}&user_id={}&type={}&page={}&returntype=json'.format(
@@ -456,6 +479,14 @@ env("", function(errors, window) {
     if (!addPendingResponse(cacheKey, res)) {
       return;
     }
+
+    if (FRIEND_USER_IDS.indexOf(parseInt(req.params.id)) === -1) {
+      if (!checkRateLimit("hkg_access", req.params.private_token, API_ACCESS_RATE_LIMIT_TIMES, true)) {
+        res.send(429, "Rate limit exceeded.");
+        return true;
+      }
+    }
+
     console.log("Requesting: {}".format(cacheKey));
     var start = page == 0 ? 0 : page * POSTS_PER_PAGE + 1;
     var limit = page == 0 ? POSTS_PER_PAGE + 1 : POSTS_PER_PAGE;
@@ -514,6 +545,14 @@ env("", function(errors, window) {
     if (checkAPIRequest(req, res)) {
       return;
     }
+
+    if (FRIEND_USER_IDS.indexOf(parseInt(req.params.id)) === -1) {
+      if (!checkRateLimit("hkg_access", req.params.private_token, API_ACCESS_RATE_LIMIT_TIMES, true)) {
+        res.send(429, "Rate limit exceeded.");
+        return true;
+      }
+    }
+
     var options = {
       url: (req.body.api ? "http://android-1-1.hkgolden.com" :
         "http://forum15.hkgolden.com") + req.body.path,
