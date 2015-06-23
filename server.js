@@ -30,7 +30,7 @@ var API_ACCESS_RATE_LIMIT_TIMES = 50;
 
 var FRIEND_USER_IDS = [505042]; // Friends does not have rate limit
 var FRIEND_ONLY_SERVER = false; // true: Only friends can create a new account here
-var NO_CACHE_FRIEND_REQUESTS = true; // Do not respond friend's request with short cache (long cache ok)
+var NO_CACHE_FRIEND_REQUESTS = true; // Do not respond friend's request with short cache (long cache ok) (?cache=true to bypass)
 
 // This is to prevent the server from triggering HKGolden's rate limit system to block ourself out.
 var REQUEST_MIN_INTERVALS = {
@@ -49,6 +49,8 @@ var VALID_FORUMS = ["ET", "CA", "FN", "GM", "HW", "IN", "SW", "MP", "AP",
   "DC", "ST", "WK", "TS", "RA", "MB", "AC", "JT", "EP", "BW"
 ];
 // ======= CHANGE THINGS ABOVE =======
+
+var pingTime = -1;
 
 // Misc functions
 Date.prototype.yyyymmdd = function() {
@@ -151,6 +153,7 @@ var saveDb = function() {
   if (Date.now() - lastSaveDb < SAVE_MIN_INTERVAL) {
     return;
   }
+
   lastSaveDb = Date.now();
   try {
     fs.writeFile(dbFilename, zlib.gzipSync(JSON.stringify(db)), function(err) {
@@ -316,6 +319,10 @@ env("", function(errors, window) {
     name: "HKGPX"
   });
 
+  server.get('/ping', function(req, res, next) {
+    res.send({"download_time": pingTime});
+  });
+
   server.put('/new-account/:id/:private_token', function(req, res, next) {
     res.charSet('utf-8');
     if (checkInt(req.params.id, "ID", res)) {
@@ -360,7 +367,6 @@ env("", function(errors, window) {
     res.charSet('utf-8');
     if (checkInt(req.params.id, "ID", res)) {
       return;
-      v
     }
     if (req.params.private_token.length != 32) {
       res.send(400, "Private token's length must be 32.");
@@ -415,6 +421,7 @@ env("", function(errors, window) {
     });
   });
 
+  server.use(restify.queryParser());
   server.get('/topic-list/:forum/:page/:id/:private_token', function(req, res, next) {
     res.charSet('utf-8');
     if (checkInt(req.params.id, "ID", res)) {
@@ -432,7 +439,7 @@ env("", function(errors, window) {
     }
 
     var isFriend = FRIEND_USER_IDS.indexOf(parseInt(req.params.id)) !== -1;
-    var shouldRespondWithCache = !(isFriend && NO_CACHE_FRIEND_REQUESTS);
+    var shouldRespondWithCache = !(isFriend && NO_CACHE_FRIEND_REQUESTS) || req.query.cache === "true";
 
     var cacheKey = "{}-{}".format(req.params.forum, req.params.page - 1);
     var now = Date.now();
@@ -445,7 +452,6 @@ env("", function(errors, window) {
     if (!addPendingResponse(cacheKey, res)) {
       return;
     }
-
 
     if (!isFriend) {
       if (!checkRateLimit("hkg_access", req.params.private_token, API_ACCESS_RATE_LIMIT_TIMES, true)) {
@@ -464,14 +470,17 @@ env("", function(errors, window) {
       }
     };
     delayedFunctionRun("hkg_api", function() {
+      var startTime = Date.now();
       request(options, function(error, response, body) {
         if (error || response.statusCode != 200) {
           sendToAllResponses(cacheKey, 503, "Server has received an invalid response from upstream.");
           return;
         }
+        var finishTime = Date.now();
+        pingTime = finishTime - startTime;
         var cache = {
           "data": JSON.parse(body),
-          "expires": Date.now() + HKGOLDEN_CACHE_TIME
+          "expires": finishTime + HKGOLDEN_CACHE_TIME
         }
         sendToAllResponses(cacheKey, 200, cache["data"]);
         caches[cacheKey] = cache;
@@ -504,7 +513,7 @@ env("", function(errors, window) {
       return;
     }
     var isFriend = FRIEND_USER_IDS.indexOf(parseInt(req.params.id)) !== -1;
-    var shouldRespondWithCache = !(isFriend && NO_CACHE_FRIEND_REQUESTS);
+    var shouldRespondWithCache = !(isFriend && NO_CACHE_FRIEND_REQUESTS) || req.query.cache === "true";
 
     var now = Date.now();
     if (shouldRespondWithCache && cacheKey in caches && caches[cacheKey]["expires"] >= now) {
