@@ -30,6 +30,7 @@ var API_ACCESS_RATE_LIMIT_TIMES = 50;
 
 var FRIEND_USER_IDS = [505042]; // Friends does not have rate limit
 var FRIEND_ONLY_SERVER = false; // true: Only friends can create a new account here
+var NO_CACHE_FRIEND_REQUESTS = true; // Do not respond friend's request with short cache (long cache ok)
 
 // This is to prevent the server from triggering HKGolden's rate limit system to block ourself out.
 var REQUEST_MIN_INTERVALS = {
@@ -429,9 +430,14 @@ env("", function(errors, window) {
     if (checkAPIRequest(req, res)) {
       return;
     }
+
+    var isFriend = FRIEND_USER_IDS.indexOf(parseInt(req.params.id)) !== -1;
+    var shouldRespondWithCache = !(isFriend && NO_CACHE_FRIEND_REQUESTS);
+
     var cacheKey = "{}-{}".format(req.params.forum, req.params.page - 1);
     var now = Date.now();
-    if (cacheKey in caches && caches[cacheKey]["expires"] >= now) {
+
+    if (shouldRespondWithCache && cacheKey in caches && caches[cacheKey]["expires"] >= now) {
       res.send(caches[cacheKey]["data"]);
       console.log("Cache hit: {}".format(cacheKey));
       return;
@@ -441,7 +447,7 @@ env("", function(errors, window) {
     }
 
 
-    if (FRIEND_USER_IDS.indexOf(parseInt(req.params.id)) === -1) {
+    if (!isFriend) {
       if (!checkRateLimit("hkg_access", req.params.private_token, API_ACCESS_RATE_LIMIT_TIMES, true)) {
         res.send(429, "Rate limit exceeded.");
         return true;
@@ -497,8 +503,11 @@ env("", function(errors, window) {
       saveDb();
       return;
     }
+    var isFriend = FRIEND_USER_IDS.indexOf(parseInt(req.params.id)) !== -1;
+    var shouldRespondWithCache = !(isFriend && NO_CACHE_FRIEND_REQUESTS);
+
     var now = Date.now();
-    if (cacheKey in caches && caches[cacheKey]["expires"] >= now) {
+    if (shouldRespondWithCache && cacheKey in caches && caches[cacheKey]["expires"] >= now) {
       console.log("Cache hit: {}".format(cacheKey));
       res.send(caches[cacheKey]["data"]);
       return;
@@ -507,7 +516,7 @@ env("", function(errors, window) {
       return;
     }
 
-    if (FRIEND_USER_IDS.indexOf(parseInt(req.params.id)) === -1) {
+    if (!isFriend) {
       if (!checkRateLimit("hkg_access", req.params.private_token, API_ACCESS_RATE_LIMIT_TIMES, true)) {
         res.send(429, "Rate limit exceeded.");
         return true;
