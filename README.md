@@ -8,14 +8,15 @@ A HKGolden proxy server written in node.js
  - Thus, some mobile carrier users may not be able to 上高登
 
 # Why HKGPX instead of other proxies (HTTP/SOCKS/VPN...)?
+- You can make your server a safe public server. Your friends/other forum members can use yours
 - Authenicate each proxy user with their HKGolden account
 - Minimum interval of requesting to HKGolden's server to avoid triggering it's rate limit
-- Does not require users to build their own proxy, they can use yours
 - Topic list caching
 - Topic caching && topic long-term caching
 
-# Why build a HKGPX server instead of using datHKG's default options?
+# Why build a HKGPX server instead of using datHKG's public servers?
 - We log your IP, cookies and any other request info for security purposes (in case of legal issues).
+- The public servers will get slower if users amount increases.
 
 # Quick start?
 1. Install `git`, `node.js`, `npm` in your system.
