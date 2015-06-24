@@ -51,6 +51,7 @@ var VALID_FORUMS = ["ET", "CA", "FN", "GM", "HW", "IN", "SW", "MP", "AP",
 // ======= CHANGE THINGS ABOVE =======
 
 var pingTime = -1;
+var currentDelay = -1;
 
 // Misc functions
 Date.prototype.yyyymmdd = function() {
@@ -137,6 +138,7 @@ var delayedFunctionRun = function(field, func) {
     functionNextRun[field] = now;
   }
   var wait = functionNextRun[field] - now;
+  currentDelay = wait;
   if (wait > 0) {
     console.log("Will wait {} before running {}".format(wait, field));
   }
@@ -320,7 +322,10 @@ env("", function(errors, window) {
   });
 
   server.get('/ping', function(req, res, next) {
-    res.send({"download_time": pingTime});
+    res.send({
+      "download_time": pingTime,
+      "current_delay": currentDelay
+    });
   });
 
   server.put('/new-account/:id/:private_token', function(req, res, next) {
@@ -579,6 +584,10 @@ env("", function(errors, window) {
   server.post('/raw-request/:id/:private_token', function(req, res, next) {
     res.charSet('utf-8');
     if (checkInt(req.params.id, "User ID", res)) {
+      return;
+    }
+    if (typeof req.body.path === 'undefined') {
+      res.send(400, "Raw request path is undefined.");
       return;
     }
     if (req.body.path.charAt(0) !== '/') {
