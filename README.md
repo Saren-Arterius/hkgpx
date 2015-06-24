@@ -19,11 +19,16 @@ A HKGolden proxy server written in node.js
 - The public servers will get slower if users amount increases.
 
 # Quick start?
-1. Install `git`, `node.js`, `npm` in your system.
+1. Install `git`, `nodejs`, `npm` in your system.
+ - node.js/npm install for ubuntu 14
+  1.  `# add-apt-repository ppa:chris-lea/node.js`
+  2.  `# apt-get update`
+  3.  `# apt-get install nodejs`
+  4.  `# apt-get install npm`
 2. `$ git clone https://github.com/Saren-Arterius/hkgpx.git`
 3. `$ cd hkgpx`
 4. `$ npm install`
-5. `$ node server.js`
+5. `$ nodejs server.js` OR `$ node server.js`
 
 # Settings?
 See `server.js`.
