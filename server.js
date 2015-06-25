@@ -377,6 +377,10 @@ env("", function(errors, window) {
       res.send(400, "Private token's length must be 32.");
       return;
     }
+    if (db["accounts"][req.params.id]["private_token"] === db["accounts"][req.params.id]["pending_private_token"]) {
+      res.send(400, "Already verified this account and this private token.");
+      return;
+    }
     if (!checkRateLimit("account_action", req.headers["x-real-ip"], 10, true)) {
       res.send(429, "Rate limit exceeded.");
       return;
@@ -387,10 +391,6 @@ env("", function(errors, window) {
     }
     if (req.params.private_token !== db["accounts"][req.params.id]["pending_private_token"]) {
       res.send(400, "Private token mismatch.");
-      return;
-    }
-    if (db["accounts"][req.params.id]["private_token"] === db["accounts"][req.params.id]["pending_private_token"]) {
-      res.send(400, "Already verified this account and this private token.");
       return;
     }
     if (!addPendingResponse(req.params.id, res)) {
