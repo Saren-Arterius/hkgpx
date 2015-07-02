@@ -46,7 +46,7 @@ var RATE_LIMIT_RESET_INTERVALS = {
 
 var VALID_FORUMS = ["ET", "CA", "FN", "GM", "HW", "IN", "SW", "MP", "AP",
   "SP", "LV", "SY", "ED", "BB", "PT", "TR", "CO", "AN", "TO", "MU", "VI",
-  "DC", "ST", "WK", "TS", "RA", "MB", "AC", "JT", "EP", "BW"
+  "DC", "ST", "WK", "TS", "RA", "MB", "AC", "JT", "EP", "BW", "AU"
 ];
 // ======= CHANGE THINGS ABOVE =======
 
