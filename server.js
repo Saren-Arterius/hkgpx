@@ -407,7 +407,7 @@ env("", function(errors, window) {
     };
     delayedFunctionRun("hkg_desktop", function() {
       request(options, function(error, response, body) {
-        if ("code" in error && error.code == "ETIMEDOUT") {
+        if (error != null && "code" in error && error.code == "ETIMEDOUT") {
           sendToAllResponses(cacheKey, 503, "Timed out connecting to upstream.");
           return;
         }
@@ -485,7 +485,7 @@ env("", function(errors, window) {
     delayedFunctionRun("hkg_api", function() {
       var startTime = Date.now();
       request(options, function(error, response, body) {
-        if ("code" in error && error.code == "ETIMEDOUT") {
+        if (error != null && "code" in error && error.code == "ETIMEDOUT") {
           sendToAllResponses(cacheKey, 503, "Timed out connecting to upstream.");
           return;
         }
@@ -573,7 +573,7 @@ env("", function(errors, window) {
 
     delayedFunctionRun("hkg_api", function() {
       request(options, function(error, response, body) {
-        if ("code" in error && error.code == "ETIMEDOUT") {
+        if (error != null && "code" in error && error.code == "ETIMEDOUT") {
           sendToAllResponses(cacheKey, 503, "Timed out connecting to upstream.");
           return;
         }
@@ -650,7 +650,7 @@ env("", function(errors, window) {
     saveLog();
     delayedFunctionRun(req.body.api ? "hkg_api" : "hkg_desktop", function() {
       request(options, function(error, response, body) {
-        if ("code" in error && error.code == "ETIMEDOUT") {
+        if (error != null && "code" in error && error.code == "ETIMEDOUT") {
           res.send(503, "Timed out connecting to upstream.");
           return;
         }
