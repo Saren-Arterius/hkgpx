@@ -12,6 +12,8 @@ var zlib = require('zlib');
 var BIND_ADDRESS = process.env.OPENSHIFT_NODEJS_IP || "0.0.0.0";
 var SERVER_PORT = process.env.OPENSHIFT_NODEJS_PORT || process.env.PORT || 8888; // http://127.0.0.1:8888
 
+var REQUEST_TIMEOUT = 8 * 1000;
+
 var POSTS_PER_PAGE = 25; // Do not change
 var SAVE_MIN_INTERVAL = 5 * 1000; // There will be at least 5 seconds between DB and logs saving
 var CLEANUP_INTERVAL = 600 * 1000; // Clean up unverified accounts && unused long topic cache
@@ -400,10 +402,15 @@ env("", function(errors, window) {
       url: 'http://forum15.hkgolden.com/ProfilePage.aspx?userid={}'.format(req.params.id),
       headers: {
         'User-Agent': 'Mozilla/5.0'
-      }
+      },
+      timeout: REQUEST_TIMEOUT
     };
     delayedFunctionRun("hkg_desktop", function() {
       request(options, function(error, response, body) {
+        if ("code" in error && error.code == "ETIMEDOUT") {
+          sendToAllResponses(cacheKey, 503, "Timed out connecting to upstream.");
+          return;
+        }
         if (error || response.statusCode != 200) {
           sendToAllResponses(req.params.id, 503, "Server has received an invalid response from upstream.");
           return;
@@ -472,11 +479,16 @@ env("", function(errors, window) {
       ),
       headers: {
         'User-Agent': 'Mozilla/5.0'
-      }
+      },
+      timeout: REQUEST_TIMEOUT
     };
     delayedFunctionRun("hkg_api", function() {
       var startTime = Date.now();
       request(options, function(error, response, body) {
+        if ("code" in error && error.code == "ETIMEDOUT") {
+          sendToAllResponses(cacheKey, 503, "Timed out connecting to upstream.");
+          return;
+        }
         if (error || response.statusCode != 200) {
           sendToAllResponses(cacheKey, 503, "Server has received an invalid response from upstream.");
           return;
@@ -555,11 +567,16 @@ env("", function(errors, window) {
         filtermode: "N",
         sensormode: "N",
         returntype: "json"
-      }
+      },
+      timeout: REQUEST_TIMEOUT
     };
 
     delayedFunctionRun("hkg_api", function() {
       request(options, function(error, response, body) {
+        if ("code" in error && error.code == "ETIMEDOUT") {
+          sendToAllResponses(cacheKey, 503, "Timed out connecting to upstream.");
+          return;
+        }
         if (error || response.statusCode != 200) {
           sendToAllResponses(cacheKey, 503, "Server has received an invalid response from upstream.");
           return;
@@ -614,7 +631,8 @@ env("", function(errors, window) {
         "http://forum15.hkgolden.com") + req.body.path,
       headers: {
         'User-Agent': 'Mozilla/5.0'
-      }
+      },
+      timeout: REQUEST_TIMEOUT
     };
     if ("rp" in req.body) {
       options.form = req.body.rp.urlParams;
@@ -632,6 +650,10 @@ env("", function(errors, window) {
     saveLog();
     delayedFunctionRun(req.body.api ? "hkg_api" : "hkg_desktop", function() {
       request(options, function(error, response, body) {
+        if ("code" in error && error.code == "ETIMEDOUT") {
+          res.send(503, "Timed out connecting to upstream.");
+          return;
+        }
         if (error || response.statusCode != 200) {
           res.send(503, "Server has received an invalid response from upstream.");
           return;
