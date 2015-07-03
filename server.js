@@ -408,7 +408,7 @@ env("", function(errors, window) {
     delayedFunctionRun("hkg_desktop", function() {
       request(options, function(error, response, body) {
         if (error != null && "code" in error && error.code == "ETIMEDOUT") {
-          sendToAllResponses(cacheKey, 503, "Timed out connecting to upstream.");
+          sendToAllResponses(req.params.id, 503, "Timed out connecting to upstream.");
           return;
         }
         if (error || response.statusCode != 200) {
