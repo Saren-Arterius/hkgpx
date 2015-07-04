@@ -474,7 +474,7 @@ env("", function(errors, window) {
 
     console.log("Requesting: {}".format(cacheKey));
     var options = {
-      url: 'http://android-1-2.hkgolden.com/newTopics.aspx?s={}&user_id={}&type={}&page={}&filtermode=N&sensormode=N&returntype=json'.format(
+      url: 'http://android-1-1.hkgolden.com/newTopics.aspx?s={}&user_id={}&type={}&page={}&filtermode=N&sensormode=N&returntype=json'.format(
         apiKey(req.params.id), req.params.id, req.params.forum, req.params.page
       ),
       headers: {
@@ -555,7 +555,7 @@ env("", function(errors, window) {
     var limit = page == 0 ? POSTS_PER_PAGE + 1 : POSTS_PER_PAGE;
 
     var options = {
-      url: 'http://android-1-2.hkgolden.com/newView.aspx',
+      url: 'http://android-1-1.hkgolden.com/newView.aspx',
       headers: {
         'User-Agent': 'Mozilla/5.0'
       },
@@ -628,7 +628,7 @@ env("", function(errors, window) {
     }
 
     var options = {
-      url: (req.body.api ? "http://android-1-2.hkgolden.com" :
+      url: (req.body.api ? "http://android-1-1.hkgolden.com" :
         "http://forum15.hkgolden.com") + req.body.path,
       headers: {
         'User-Agent': 'Mozilla/5.0'
