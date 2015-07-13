@@ -18,7 +18,7 @@
   "description": "新加坡 (HTTPS)"
 }, {
   "host": "http://hkgpx-saren.rhcloud.com",
-  "description": "美國"
+  "description": "美國\n(帳戶資料易失)"
 }, {
   "host": "http://cf-hkgpx-rhc.wtako.net",
   "description": "(預設) 美國 (CloudFlare)\n(帳戶資料易失)"
