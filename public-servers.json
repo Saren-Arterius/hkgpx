@@ -8,17 +8,20 @@
   "host": "https://hkgpx.wtako.net",
   "description": "香港 (HTTPS)"
 }, {
-  "host": "http://hkgpx.saren.me",
+  "host": "http://cf-hkgpx.saren.me",
   "description": "新加坡 (CloudFlare)"
 }, {
-  "host": "https://hkgpx.saren.me",
+  "host": "https://cf-hkgpx.saren.me",
   "description": "新加坡 (CloudFlare, HTTPS)\n(你的裝置未必支援)"
+}, {
+  "host": "https://hkgpx.saren.me",
+  "description": "新加坡 (HTTPS)"
 }, {
   "host": "http://hkgpx-saren.rhcloud.com",
   "description": "美國"
 }, {
   "host": "http://cf-hkgpx-rhc.wtako.net",
-  "description": "(預設) 美國 (CloudFlare)"
+  "description": "(預設) 美國 (CloudFlare)\n(帳戶資料易失)"
 }, {
   "host": "https://cf-hkgpx-rhc.wtako.net",
   "description": "美國 (CloudFlare, HTTPS)\n(你的裝置未必支援)"
