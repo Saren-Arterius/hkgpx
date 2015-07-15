@@ -51,7 +51,7 @@ var VALID_FORUMS = ["ET", "CA", "FN", "GM", "HW", "IN", "SW", "MP", "AP",
   "DC", "ST", "WK", "TS", "RA", "MB", "AC", "JT", "EP", "BW", "AU"
 ];
 
-var MAX_SCORE = 40;
+var MAX_SCORE = 30;
 // ======= CHANGE THINGS ABOVE =======
 
 var pingTime = -1;
