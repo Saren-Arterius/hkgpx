@@ -50,10 +50,24 @@ var VALID_FORUMS = ["ET", "CA", "FN", "GM", "HW", "IN", "SW", "MP", "AP",
   "SP", "LV", "SY", "ED", "BB", "PT", "TR", "CO", "AN", "TO", "MU", "VI",
   "DC", "ST", "WK", "TS", "RA", "MB", "AC", "JT", "EP", "BW", "AU"
 ];
+
+var MAX_SCORE = 40;
 // ======= CHANGE THINGS ABOVE =======
 
 var pingTime = -1;
 var currentDelay = -1;
+var apiScore = MAX_SCORE;
+
+var shouldUseAPI = function() {
+  if (apiScore >= MAX_SCORE) {
+    apiScore = MAX_SCORE;
+    return true;
+  } else if (apiScore <= 0) {
+    apiScore = 0;
+    return false;
+  }
+  return apiScore > Math.random() * MAX_SCORE;
+}
 
 // Misc functions
 Date.prototype.yyyymmdd = function() {
@@ -61,7 +75,7 @@ Date.prototype.yyyymmdd = function() {
   var mm = (this.getMonth() + 1).toString(); // getMonth() is zero-based
   var dd = this.getDate().toString();
   return yyyy + (mm[1] ? mm : "0" + mm[0]) + (dd[1] ? dd : "0" + dd[0]); // padding
-};
+}
 
 String.prototype.format = function() {
   var i = 0,
@@ -69,7 +83,7 @@ String.prototype.format = function() {
   return this.replace(/{}/g, function() {
     return typeof args[i] != 'undefined' ? args[i++] : '';
   });
-};
+}
 
 var isInt = function(value) {
   return !isNaN(value) &&
@@ -119,7 +133,7 @@ var makeID = function() {
   var possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
   for (var i = 0; i < 32; i++)
-    text += possible.charAt(Math.floor(Math.random() * possible.length));
+  text += possible.charAt(Math.floor(Math.random() * possible.length));
 
   return text;
 }
@@ -316,17 +330,114 @@ setInterval(function() {
   }
 }, CLEANUP_INTERVAL);
 
-
 env("", function(errors, window) {
   var $ = require('jquery')(window);
   var server = restify.createServer({
     name: "HKGPX"
   });
 
+  var topicListJsonFromDoc = function(doc) {
+    var json = {
+      success: true,
+      error_msg: '',
+      topic_list: []
+    };
+    $(doc).find("[id*=Thread_No]").each(function() {
+      var userID = parseInt($(this).attr("userid"));
+      var username = $(this).attr("username").trim();
+      var topicID = parseInt($(this).children().eq(1).children().eq(0).attr("href").split("=")[2]);
+      var locked = $(this).children().eq(0).children().eq(0).attr("src").indexOf("locked") !== -1;
+      var topicTitle = $(this).children().eq(1).children().eq(0).text().trim();
+      var ar = $(this).children().eq(3).text().trim().match(/\d+/g);
+      var lastReply = new Date(ar[2], ar[1] - 1, ar[0], ar[3], ar[4], 0, 0).getTime();
+      var replies = parseInt($(this).children().eq(4).text().trim().replace(",", ""));
+      var rating = parseInt($(this).children().eq(5).text().trim().replace(",", ""));
+      var message = {
+        "Message_ID": topicID,
+        "Message_Title": topicTitle,
+        "Author_ID": userID,
+        "Author_Name": username,
+        "Last_Reply_Date": '/Date({})/'.format(lastReply),
+        "Total_Replies": replies,
+        "Message_Status": locked ? "L" : "A",
+        "Rating": rating
+      };
+      json.topic_list.push(message);
+    });
+    return json;
+  }
+
+  var topicJsonFromDoc = function(doc) {
+    var board = $(doc).find("#ctl00_ContentPlaceHolder1_SystemMessageBoard");
+    if (board.length) {
+      return {
+        "success": false,
+        "error_msg": $(doc).find("#ctl00_ContentPlaceHolder1_SystemMessageBoard > " +
+          "tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(1) > table:nth-child(1) > " +
+          "tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(1) > table:nth-child(1) > " +
+          "tbody:nth-child(1) > tr:nth-child(2) > td:nth-child(1) > p:nth-child(2)").text()
+      };
+    }
+    var title = "(null)"
+    var sp = doc.split("\r\n");
+    for (var i in sp) {
+      if (sp[i].indexOf("<meta") !== -1 && sp[i].indexOf("og:title\"") !== -1) {
+        title = sp[i].split("content=\"")[1].split("\"/>")[0];
+        break;
+      }
+    }
+    var ratingContainer = $(doc).find("#DivMarkThread");
+    var ratedGood = 0;
+    var ratedBad = 0;
+    if (ratingContainer.length) {
+      ratedGood = parseInt(ratingContainer.children().eq(1).text());
+      ratedBad = parseInt(ratingContainer.children().eq(3).text());
+    }
+    var json = {
+      "success": true,
+      "Message_Title": title,
+      "Message_Status": $(doc).find("#ctl00_ContentPlaceHolder1_view_form").children().eq(2).text().indexOf("鎖") !== -1 ? "L" : "A",
+      "Total_Replies": parseInt($(doc).find(".repliers_header:eq(1)").children().eq(1).text().split("個")[0]),
+      "Rating_Good": ratedGood,
+      "Rating_Bad": ratedBad,
+      "messages": []
+    };
+    $(doc).find(".repliers").each(function() {
+      var replyInfo = $(this).find("[username]").eq(0);
+      if (replyInfo.length != 0) {
+        var userID = parseInt(replyInfo.attr("userid"));
+        var username = replyInfo.attr("username");
+        var postID = 1;
+        var genderIdentity;
+        if (replyInfo.children().eq(0).children().eq(0).children().eq(0).attr("name")) {
+          postID = parseInt(replyInfo.children().eq(0).children().eq(0).children().eq(0).attr("name"));
+          genderIdentity = replyInfo.children().eq(0).children().eq(0).children().eq(1).attr("style");
+        } else {
+          genderIdentity = replyInfo.children().eq(0).children().eq(0).children().eq(0).attr("style");
+        }
+        var gender = genderIdentity.indexOf("0066FF") !== -1 ? "M" : "F";
+        var ar = replyInfo.find("[style='font-size: 12px; color:gray;']").text().trim().match(/\d+/g);
+        var lastReply = new Date(ar[2], ar[1] - 1, ar[0], ar[3], ar[4], 0, 0).getTime();
+        var content = replyInfo.find(".ContentGrid").first().html().trim().replace(/<br><br><br>$/, "");
+        var message = {
+          "Reply_ID": postID,
+          "Author_Name": username,
+          "Author_Gender": gender,
+          "Author_ID": userID,
+          "Message_Date": '/Date({})/'.format(lastReply),
+          "Message_Body": content
+        };
+        json.messages.push(message);
+      }
+    });
+    return json;
+  }
+
   server.get('/ping', function(req, res, next) {
     res.send({
       "download_time": pingTime,
-      "current_delay": currentDelay
+      "current_delay": currentDelay,
+      "api_score": apiScore
     });
   });
 
@@ -471,33 +582,61 @@ env("", function(errors, window) {
         return true;
       }
     }
-
+    var useAPI = shouldUseAPI();
     console.log("Requesting: {}".format(cacheKey));
-    var options = {
-      url: 'http://android-1-1.hkgolden.com/newTopics.aspx?s={}&user_id={}&type={}&page={}&filtermode=N&sensormode=N&returntype=json'.format(
-        apiKey(req.params.id), req.params.id, req.params.forum, req.params.page
-      ),
-      headers: {
-        'User-Agent': 'Mozilla/5.0'
-      },
-      timeout: REQUEST_TIMEOUT
-    };
+    var options;
+    if (useAPI) {
+      var options = {
+        url: 'http://android-1-1.hkgolden.com/newTopics.aspx?s={}&user_id={}&type={}&page={}&filtermode=N&sensormode=N&returntype=json'.format(
+          apiKey(req.params.id), req.params.id, req.params.forum, req.params.page
+        ),
+        headers: {
+          'User-Agent': 'Mozilla/5.0'
+        },
+        timeout: REQUEST_TIMEOUT
+      };
+    } else {
+      var options = {
+        url: 'http://forum15.hkgolden.com/topics.aspx?type={}&page={}&filtermodeS=N&sensormode=N'.format(
+          req.params.forum, req.params.page
+        ),
+        headers: {
+          'User-Agent': 'Mozilla/5.0'
+        },
+        timeout: REQUEST_TIMEOUT
+      };
+    }
     console.log(options.url);
-    delayedFunctionRun("hkg_api", function() {
+    delayedFunctionRun(useAPI ? "hkg_api" : "hkg_desktop", function() {
       var startTime = Date.now();
       request(options, function(error, response, body) {
         if (error != null && "code" in error && error.code == "ETIMEDOUT") {
           sendToAllResponses(cacheKey, 503, "Timed out connecting to upstream.");
+          if (useAPI) {
+            apiScore -= 2;
+          } else {
+            apiScore += 2;
+          }
           return;
         }
         if (error || response.statusCode != 200) {
           sendToAllResponses(cacheKey, 503, "Server has received an invalid response from upstream.");
+          if (useAPI) {
+            apiScore -= 2;
+          } else {
+            apiScore += 2;
+          }
           return;
+        }
+        if (useAPI) {
+          apiScore++;
+        } else {
+          apiScore--;
         }
         var finishTime = Date.now();
         pingTime = finishTime - startTime;
         var cache = {
-          "data": JSON.parse(body),
+          "data": useAPI ? JSON.parse(body) : topicListJsonFromDoc(body),
           "expires": finishTime + HKGOLDEN_CACHE_TIME
         }
         sendToAllResponses(cacheKey, 200, cache["data"]);
@@ -554,38 +693,69 @@ env("", function(errors, window) {
     var start = page == 0 ? 0 : page * POSTS_PER_PAGE + 1;
     var limit = page == 0 ? POSTS_PER_PAGE + 1 : POSTS_PER_PAGE;
 
-    var options = {
-      url: 'http://android-1-1.hkgolden.com/newView.aspx',
-      headers: {
-        'User-Agent': 'Mozilla/5.0'
-      },
-      form: {
-        s: apiKey(req.params.id),
-        user_id: req.params.id,
-        message: req.params.topic_id,
-        start: start,
-        limit: limit,
-        filtermode: "N",
-        sensormode: "N",
-        returntype: "json"
-      },
-      timeout: REQUEST_TIMEOUT
-    };
+    var options;
+    var useAPI = shouldUseAPI();
 
-    delayedFunctionRun("hkg_api", function() {
+    if (useAPI) {
+      options = {
+        url: 'http://android-1-1.hkgolden.com/newView.aspx',
+        headers: {
+          'User-Agent': 'Mozilla/5.0'
+        },
+        form: {
+          s: apiKey(req.params.id),
+          user_id: req.params.id,
+          message: req.params.topic_id,
+          start: start,
+          limit: limit,
+          filtermode: "N",
+          sensormode: "N",
+          returntype: "json"
+        },
+        timeout: REQUEST_TIMEOUT
+      };
+    } else {
+      options = {
+        url: 'http://forum15.hkgolden.com/view.aspx?message={}&page={}&sensormode=N'.format(
+          req.params.topic_id, page + 1
+        ),
+        headers: {
+          'User-Agent': 'Mozilla/5.0'
+        },
+        timeout: REQUEST_TIMEOUT
+      };
+    }
+
+    delayedFunctionRun(useAPI ? "hkg_api" : "hkg_desktop", function() {
       request(options, function(error, response, body) {
         if (error != null && "code" in error && error.code == "ETIMEDOUT") {
           sendToAllResponses(cacheKey, 503, "Timed out connecting to upstream.");
+          if (useAPI) {
+            apiScore -= 2;
+          } else {
+            apiScore += 2;
+          }
           return;
         }
         if (error || response.statusCode != 200) {
           sendToAllResponses(cacheKey, 503, "Server has received an invalid response from upstream.");
+          if (useAPI) {
+            apiScore -= 2;
+          } else {
+            apiScore += 2;
+          }
           return;
         }
+        if (useAPI) {
+          apiScore++;
+        } else {
+          apiScore--;
+        }
         var cache = {
-          "data": JSON.parse(body),
+          "data": useAPI ? JSON.parse(body) : topicJsonFromDoc(body),
         }
         sendToAllResponses(cacheKey, 200, cache["data"]);
+
         if (cache["data"]["messages"].length == limit) {
           cache["expires"] = Date.now() + HKGOLDEN_LONG_CACHE_TIME;
           db["long_cache"][cacheKey] = cache;
