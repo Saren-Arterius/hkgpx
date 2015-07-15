@@ -434,6 +434,7 @@ env("", function(errors, window) {
   }
 
   server.get('/ping', function(req, res, next) {
+    shouldUseAPI();
     res.send({
       "download_time": pingTime,
       "current_delay": currentDelay,
@@ -630,8 +631,6 @@ env("", function(errors, window) {
         }
         if (useAPI) {
           apiScore++;
-        } else {
-          apiScore--;
         }
         var finishTime = Date.now();
         pingTime = finishTime - startTime;
@@ -748,8 +747,6 @@ env("", function(errors, window) {
         }
         if (useAPI) {
           apiScore++;
-        } else {
-          apiScore--;
         }
         var cache = {
           "data": useAPI ? JSON.parse(body) : topicJsonFromDoc(body),
