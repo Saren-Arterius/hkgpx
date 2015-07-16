@@ -638,6 +638,15 @@ env("", function(errors, window) {
           "data": useAPI ? JSON.parse(body) : topicListJsonFromDoc(body),
           "expires": finishTime + HKGOLDEN_CACHE_TIME
         }
+        if (cache["data"].topic_list.length == 0) {
+          sendToAllResponses(cacheKey, 503, "Server has received an invalid response from upstream.");
+          if (useAPI) {
+            apiScore -= 2;
+          } else {
+            apiScore += 2;
+          }
+          return;
+        }
         sendToAllResponses(cacheKey, 200, cache["data"]);
         caches[cacheKey] = cache;
       })
@@ -750,6 +759,15 @@ env("", function(errors, window) {
         }
         var cache = {
           "data": useAPI ? JSON.parse(body) : topicJsonFromDoc(body),
+        }
+        if (cache["data"].messages.length == 0) {
+          sendToAllResponses(cacheKey, 503, "Server has received an invalid response from upstream.");
+          if (useAPI) {
+            apiScore -= 2;
+          } else {
+            apiScore += 2;
+          }
+          return;
         }
         sendToAllResponses(cacheKey, 200, cache["data"]);
 
