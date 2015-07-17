@@ -58,7 +58,6 @@ var currentDelay = -1;
 var apiScore = MAX_SCORE;
 
 var shouldUseAPI = function() {
-  return false;
   if (apiScore >= MAX_SCORE) {
     apiScore = MAX_SCORE;
     return true;
@@ -66,7 +65,6 @@ var shouldUseAPI = function() {
     apiScore = 0;
     return false;
   }
-
   return apiScore > Math.random() * MAX_SCORE;
 }
 
