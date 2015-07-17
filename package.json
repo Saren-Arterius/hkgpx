@@ -1,13 +1,15 @@
 {
   "name": "hkgpx",
-  "version": "0.0.1",
+  "version": "1.0.0",
+  "description": "A HKGolden proxy server written in node.js",
   "main": "server.js",
   "dependencies": {
+    "MD5": "^1.2.2",
+    "cheerio": "^0.19.0",
     "jquery": "^2.1.4",
     "jsdom": "^3.1.2",
     "request": "^2.58.0",
-    "restify": "^3.0.3",
-    "MD5": "^1.2.2"
+    "restify": "^3.0.3"
   },
   "devDependencies": {},
   "scripts": {
@@ -23,6 +25,5 @@
   "bugs": {
     "url": "https://github.com/Saren-Arterius/hkgpx/issues"
   },
-  "homepage": "https://github.com/Saren-Arterius/hkgpx#readme",
-  "description": "HKGolden proxy server"
+  "homepage": "https://github.com/Saren-Arterius/hkgpx#readme"
 }
