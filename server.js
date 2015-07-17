@@ -58,6 +58,7 @@ var currentDelay = -1;
 var apiScore = MAX_SCORE;
 
 var shouldUseAPI = function() {
+  //return false;
   if (apiScore >= MAX_SCORE) {
     apiScore = MAX_SCORE;
     return true;
@@ -198,6 +199,7 @@ try {
       "rate_limit": {},
       "accounts": {},
       "long_cache": {},
+      "post_icons": {}
     };
   }
 } finally {
@@ -405,6 +407,9 @@ var topicJsonFromDoc = function(doc) {
     "messages": []
   };
   var position = 1;
+  if (!("post_icons" in db)) {
+    db["post_icons"] = {};
+  }
   $(".repliers").each(function() {
     var replyInfo = $(this).find("[username]").eq(0);
     if (replyInfo.length != 0) {
@@ -425,6 +430,9 @@ var topicJsonFromDoc = function(doc) {
       var iconSrc = $("#ThreadUser{} > a:nth-child(1) > img:nth-child(1)".format(position)).attr("src");
       if (iconSrc) {
         postIcon = parseInt(iconSrc.replace("icons/", "").replace(".gif", ""));
+      }
+      if (postIcon != 0) {
+        db["post_icons"][userID] = postIcon;
       }
       var gender = genderIdentity.indexOf("0066FF") !== -1 ? "M" : "F";
       var ar = replyInfo.find("[style='font-size: 12px; color:gray;']").text().trim().match(/\d+/g);
@@ -621,7 +629,6 @@ server.get('/topic-list/:forum/:page/:id/:private_token', function(req, res, nex
       timeout: REQUEST_TIMEOUT
     };
   }
-  console.log(options.url);
   delayedFunctionRun(useAPI ? "hkg_api" : "hkg_desktop", function() {
     var startTime = Date.now();
     request(options, function(error, response, body) {
@@ -782,7 +789,12 @@ server.get('/view-topic/:topic_id/:page/:id/:private_token', function(req, res, 
         }
         return;
       }
-      console.log("send");
+      for (var i in cache["data"].messages) {
+        var message = cache["data"].messages[i];
+        if (message["Author_ID"] in db["post_icons"]) {
+          message["Author_Icon"] = db["post_icons"][message["Author_ID"]];
+        }
+      }
       sendToAllResponses(cacheKey, 200, cache["data"]);
 
       if (cache["data"]["messages"].length == limit) {
