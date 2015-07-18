@@ -534,7 +534,8 @@ server.post('/verify-account/:id/:private_token', function(req, res, next) {
   var options = {
     url: 'http://forum15.hkgolden.com/ProfilePage.aspx?userid={}'.format(req.params.id),
     headers: {
-      'User-Agent': 'Mozilla/5.0'
+      'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; rv:36.0) Gecko/20100101 Firefox/36.0',
+      'Referer': 'http://forum15.hkgolden.com'
     },
     timeout: REQUEST_TIMEOUT
   };
@@ -614,7 +615,8 @@ server.get('/topic-list/:forum/:page/:id/:private_token', function(req, res, nex
         apiKey(req.params.id), req.params.id, req.params.forum, req.params.page
       ),
       headers: {
-        'User-Agent': 'Mozilla/5.0'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; rv:36.0) Gecko/20100101 Firefox/36.0',
+        'Referer': 'http://forum15.hkgolden.com'
       },
       timeout: REQUEST_TIMEOUT
     };
@@ -624,7 +626,8 @@ server.get('/topic-list/:forum/:page/:id/:private_token', function(req, res, nex
         req.params.forum, req.params.page
       ),
       headers: {
-        'User-Agent': 'Mozilla/5.0'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; rv:36.0) Gecko/20100101 Firefox/36.0',
+        'Referer': 'http://forum15.hkgolden.com'
       },
       timeout: REQUEST_TIMEOUT
     };
@@ -729,7 +732,8 @@ server.get('/view-topic/:topic_id/:page/:id/:private_token', function(req, res, 
     options = {
       url: 'http://android-1-1.hkgolden.com/newView.aspx',
       headers: {
-        'User-Agent': 'Mozilla/5.0'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; rv:36.0) Gecko/20100101 Firefox/36.0',
+        'Referer': 'http://forum15.hkgolden.com'
       },
       form: {
         s: apiKey(req.params.id),
@@ -749,7 +753,8 @@ server.get('/view-topic/:topic_id/:page/:id/:private_token', function(req, res, 
         req.params.topic_id, page + 1
       ),
       headers: {
-        'User-Agent': 'Mozilla/5.0'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; rv:36.0) Gecko/20100101 Firefox/36.0',
+        'Referer': 'http://forum15.hkgolden.com'
       },
       timeout: REQUEST_TIMEOUT
     };
@@ -842,7 +847,8 @@ server.post('/raw-request/:id/:private_token', function(req, res, next) {
     url: (req.body.api ? "http://android-1-1.hkgolden.com" :
       "http://forum15.hkgolden.com") + req.body.path,
     headers: {
-      'User-Agent': 'Mozilla/5.0'
+      'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; rv:36.0) Gecko/20100101 Firefox/36.0',
+      'Referer': 'http://forum15.hkgolden.com'
     },
     timeout: REQUEST_TIMEOUT
   };
@@ -858,6 +864,7 @@ server.post('/raw-request/:id/:private_token', function(req, res, next) {
     "request": options,
     "timestamp": Date.now()
   }
+  console.log(reqLog);
   log.raw_requests.push(reqLog);
   saveLog();
   delayedFunctionRun(req.body.api ? "hkg_api" : "hkg_desktop", function() {
