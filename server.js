@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 var cheerio = require('cheerio');
 var restify = require('restify');
 var request = require('request');
@@ -802,7 +803,8 @@ server.get('/view-topic/:topic_id/:page/:id/:private_token', function(req, res, 
       }
       sendToAllResponses(cacheKey, 200, cache["data"]);
 
-      if (cache["data"]["messages"].length == limit) {
+      if (cache["data"]["messages"].length == limit &&
+        cache["data"]["Total_Replies"] > (page + 1) * 25) {
         cache["expires"] = Date.now() + HKGOLDEN_LONG_CACHE_TIME;
         db["long_cache"][cacheKey] = cache;
         saveDb();
