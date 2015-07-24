@@ -139,8 +139,20 @@ var makeID = function() {
   return text;
 }
 
-var apiKey = function(userID) {
+var apiKey1 = function(userID) {
   return md5("{}_HKGOLDEN_{}_$API#1.3^".format(new Date().yyyymmdd(), userID));
+}
+
+var apiKey2 = function(userID) {
+  return md5("{}_HKGOLDEN_{}_$API#Android_1_2^".format(new Date().yyyymmdd(), userID));
+}
+
+var apiKey2TopicList = function(userID, forum, page) {
+  return md5("{}_HKGOLDEN_{}_$API#Android_1_2^{}_{}_N_N".format(new Date().yyyymmdd(), userID, forum, page));
+}
+
+var apiKey2ViewTopic = function(userID, topicID, start) {
+  return md5("{}_HKGOLDEN_{}_$API#Android_1_2^{}_{}_N_N".format(new Date().yyyymmdd(), userID, topicID, start));
 }
 
 // functionNextRun
@@ -612,8 +624,8 @@ server.get('/topic-list/:forum/:page/:id/:private_token', function(req, res, nex
   var options;
   if (useAPI) {
     var options = {
-      url: 'http://android-1-1.hkgolden.com/newTopics.aspx?s={}&user_id={}&type={}&page={}&filtermode=N&sensormode=N&returntype=json'.format(
-        apiKey(req.params.id), req.params.id, req.params.forum, req.params.page
+      url: 'http://android-1-2.hkgolden.com/newTopics.aspx?s={}&user_id={}&type={}&page={}&filtermode=N&sensormode=N&returntype=json'.format(
+        apiKey2TopicList(req.params.id, req.params.forum, req.params.page), req.params.id, req.params.forum, req.params.page
       ),
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; rv:36.0) Gecko/20100101 Firefox/36.0',
@@ -731,13 +743,13 @@ server.get('/view-topic/:topic_id/:page/:id/:private_token', function(req, res, 
 
   if (useAPI) {
     options = {
-      url: 'http://android-1-1.hkgolden.com/newView.aspx',
+      url: 'http://android-1-2.hkgolden.com/newView.aspx',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; rv:36.0) Gecko/20100101 Firefox/36.0',
         'Referer': 'http://forum15.hkgolden.com'
       },
       form: {
-        s: apiKey(req.params.id),
+        s: apiKey2ViewTopic(req.params.id, req.params.topic_id, start),
         user_id: req.params.id,
         message: req.params.topic_id,
         start: start,
@@ -845,9 +857,20 @@ server.post('/raw-request/:id/:private_token', function(req, res, next) {
     }
   }
 
+  var url;
+  if (req.body.api) {
+    if ("apiServer" in req.body && req.body.apiServer == 2) {
+      url = "http://android-1-2.hkgolden.com";
+    } else {
+      url = "http://android-1-1.hkgolden.com";
+    }
+  } else {
+    url = "http://forum15.hkgolden.com";
+  }
+  url += req.body.path;
+
   var options = {
-    url: (req.body.api ? "http://android-1-1.hkgolden.com" :
-      "http://forum15.hkgolden.com") + req.body.path,
+    url: url,
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; rv:36.0) Gecko/20100101 Firefox/36.0',
       'Referer': 'http://forum15.hkgolden.com'
