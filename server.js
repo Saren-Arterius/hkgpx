@@ -828,6 +828,22 @@ server.get('/view-topic/:topic_id/:page/:id/:private_token', function(req, res, 
   });
 });
 
+server.post('/invalidate-cache/:cache_id/:id/:private_token', function(req, res, next) {
+  if (!(req.params.cache_id in caches)) {
+    res.send({
+      "deleted": false
+    });
+    return;
+  }
+  if (checkAPIRequest(req, res)) {
+    return;
+  }
+  delete caches[req.params.cache_id];
+  res.send({
+    "deleted": true
+  });
+});
+
 server.use(restify.bodyParser());
 server.post('/raw-request/:id/:private_token', function(req, res, next) {
   res.charSet('utf-8');
