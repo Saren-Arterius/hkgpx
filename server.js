@@ -30,14 +30,14 @@ var ACCOUNT_ACTION_RATE_LIMIT_TIMES = 10;
  */
 var API_ACCESS_RATE_LIMIT_TIMES = 50;
 
-var FRIEND_USER_IDS = [505042]; // Friends does not have rate limit
+var FRIEND_USER_IDS = [508975]; // Friends does not have rate limit
 var FRIEND_ONLY_SERVER = false; // true: Only friends can create a new account here
 var NO_CACHE_FRIEND_REQUESTS = true; // Do not respond friend's request with short cache (long cache ok) (?cache=true to bypass)
 
 // This is to prevent the server from triggering HKGolden's rate limit system to block ourself out.
 var REQUEST_MIN_INTERVALS = {
-  "hkg_desktop": 4 * 1000, // There will be at least 4 seconds between each request to http://forum15.hkgolden.com
-  "hkg_api": 2 * 1000, // There will be at least 2 seconds between each request to HKGolden mobile API
+  "hkg_desktop": 3 * 1000, // There will be at least 3 seconds between each request to http://forum15.hkgolden.com
+  "hkg_api": 1 * 1000, // There will be at least 1 seconds between each request to HKGolden mobile API
 };
 
 // How frequent will rate limits reset
