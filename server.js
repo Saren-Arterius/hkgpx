@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
+var singleton = require('run-singleton');
 var cheerio = require('cheerio');
 var restify = require('restify');
 var request = require('request');
 var fs = require('fs');
 var path = require('path');
 var md5 = require('MD5');
-var zlib = require('zlib');
-
+var RateLimiter = require('limiter').RateLimiter;
 // ======= CHANGE THINGS BELOW =======
 var BIND_ADDRESS = process.env.OPENSHIFT_NODEJS_IP || "0.0.0.0";
 var SERVER_PORT = process.env.OPENSHIFT_NODEJS_PORT || process.env.PORT || 8888; // http://127.0.0.1:8888
@@ -35,10 +35,8 @@ var FRIEND_ONLY_SERVER = false; // true: Only friends can create a new account h
 var NO_CACHE_FRIEND_REQUESTS = true; // Do not respond friend's request with short cache (long cache ok) (?cache=true to bypass)
 
 // This is to prevent the server from triggering HKGolden's rate limit system to block ourself out.
-var REQUEST_MIN_INTERVALS = {
-  "hkg_desktop": 3 * 1000, // There will be at least 3 seconds between each request to http://forum15.hkgolden.com
-  "hkg_api": 1 * 1000, // There will be at least 1 seconds between each request to HKGolden mobile API
-};
+var desktopLimiter = new RateLimiter(20, 'minute');
+var apiLimiter = new RateLimiter(60, 'minute');
 
 // How frequent will rate limits reset
 var RATE_LIMIT_RESET_INTERVALS = {
@@ -51,12 +49,32 @@ var VALID_FORUMS = ["ET", "CA", "FN", "GM", "HW", "IN", "SW", "MP", "AP",
   "DC", "ST", "WK", "TS", "RA", "MB", "AC", "JT", "EP", "BW", "AU"
 ];
 
-var MAX_SCORE = 30;
+var MAX_SCORE = 20;
+var STAT_SAMPLES = 20;
 // ======= CHANGE THINGS ABOVE =======
 
-var pingTime = -1;
-var currentDelay = -1;
+var downloadTimes = [];
+var forumSuccesses = [];
+var apiSuccesses = [];
 var apiScore = MAX_SCORE;
+
+var addStat = function(array, value) {
+  array.push(value);
+  while (array.length > STAT_SAMPLES) {
+    array.shift();
+  }
+}
+
+var statAvg = function(array) {
+  if (array.length === 0) {
+    return -1;
+  }
+  var sum = 0;
+  for (var i in array) {
+    sum += array[i];
+  }
+  return parseInt(sum / array.length);
+}
 
 var shouldUseAPI = function() {
   //return false;
@@ -92,30 +110,58 @@ var isInt = function(value) {
     !isNaN(parseInt(value, 10));
 }
 
-var checkInt = function(value, varName, res) {
-  if (!isInt(value)) {
-    res.send(400, "{} must be integer.".format(varName));
-    return true;
+var checkParams = function(req, res, next) {
+  res.charSet('utf-8');
+  var params = ["id", "topic_id", "page"];
+  for (var i in params) {
+    var value = req.params[params[i]];
+    if (!value) {
+      continue;
+    }
+    if (!isInt(value)) {
+      res.send(400, "{} must be integer.".format(params[i]));
+      return;
+    }
+    if (parseInt(value) <= 0) {
+      res.send(400, "{} must be greater than 0.".format(params[i]));
+      return;
+    }
   }
-  if (parseInt(value) <= 0) {
-    res.send(400, "{} must be greater than 0.".format(varName));
-    return true;
+  if (req.params.forum && VALID_FORUMS.indexOf(req.params.forum) === -1) {
+    res.send(400, "Forum is not valid.");
+    return;
   }
-  return false;
+  next();
 }
 
-var checkAPIRequest = function(req, res) {
+var checkRawRequest = function(req, res, next) {
+  if (typeof req.body.path === 'undefined') {
+    res.send(400, "Raw request path is undefined.");
+    return;
+  }
+  if (req.body.path.charAt(0) !== '/') {
+    res.send(400, "Raw request path is invalid.");
+    return;
+  }
+  if (!("api" in req.body)) {
+    res.send(400, "Raw request did not indicate to use API or not.");
+    return;
+  }
+  next();
+}
+
+var checkAPIRequest = function(req, res, next) {
   if (req.params.private_token.length != 32) {
     res.send(400, "Private token's length must be 32.");
-    return true;
+    return;
   }
   if (!(req.params.id in db["accounts"])) {
     res.send(400, "Account does not exist.");
-    return true;
+    return;
   }
   if (!db["accounts"][req.params.id]["verified"]) {
     res.send(400, "Account is not yet verified.");
-    return true;
+    return;
   }
   if (!checkRateLimit("account_action", req.headers["x-real-ip"], 10, false)) {
     res.send(429, "Rate limit exceeded.");
@@ -124,9 +170,9 @@ var checkAPIRequest = function(req, res) {
   if (req.params.private_token !== db["accounts"][req.params.id]["private_token"]) {
     res.send(400, "Private token mismatch.");
     checkRateLimit("account_action", req.headers["x-real-ip"], 10, true);
-    return true;
+    return;
   }
-  return false;
+  next();
 }
 
 var makeID = function() {
@@ -155,28 +201,7 @@ var apiKey2ViewTopic = function(userID, topicID, start) {
   return md5("{}_HKGOLDEN_{}_$API#Android_1_2^{}_{}_N_N".format(new Date().yyyymmdd(), userID, topicID, start));
 }
 
-// functionNextRun
-var functionNextRun = {};
-for (var field in REQUEST_MIN_INTERVALS) {
-  functionNextRun[field] = 0;
-}
-
-var delayedFunctionRun = function(field, func) {
-  var now = Date.now();
-  if (functionNextRun[field] < now) {
-    functionNextRun[field] = now;
-  }
-  var wait = functionNextRun[field] - now;
-  currentDelay = wait;
-  if (wait > 0) {
-    console.log("Will wait {} before running {}".format(wait, field));
-  }
-  setTimeout(func, wait);
-  functionNextRun[field] += REQUEST_MIN_INTERVALS[field];
-}
-
 // DB
-var dbFilename = path.join(__dirname, "db.gz");
 var dbFilenameJson = path.join(__dirname, "db.json");
 var lastSaveDb = 0;
 
@@ -184,37 +209,24 @@ var saveDb = function() {
   if (Date.now() - lastSaveDb < SAVE_MIN_INTERVAL) {
     return;
   }
-
   lastSaveDb = Date.now();
-  try {
-    fs.writeFile(dbFilename, zlib.gzipSync(JSON.stringify(db)), function(err) {
-      if (err) {
-        return console.log(err);
-      }
-    })
-  } catch (e) {
-    fs.writeFile(dbFilenameJson, JSON.stringify(db), function(err) {
-      if (err) {
-        return console.log(err);
-      }
-    })
-  }
+  fs.writeFile(dbFilenameJson, JSON.stringify(db), function(err) {
+    if (err) {
+      return console.log(err);
+    }
+  });
 };
 
 var db;
 try {
-  db = JSON.parse(zlib.gunzipSync(fs.readFileSync(dbFilename)));
+  db = JSON.parse(fs.readFileSync(dbFilenameJson));
 } catch (e) {
-  try {
-    db = JSON.parse(fs.readFileSync(dbFilenameJson));
-  } catch (e) {
-    var db = {
-      "rate_limit": {},
-      "accounts": {},
-      "long_cache": {},
-      "post_icons": {}
-    };
-  }
+  var db = {
+    "rate_limit": {},
+    "accounts": {},
+    "long_cache": {},
+    "post_icons": {}
+  };
 } finally {
   saveDb();
 }
@@ -250,7 +262,6 @@ if (!fs.existsSync(logsPath)) {
   fs.mkdirSync(logsPath);
 }
 
-
 try {
   var log = JSON.parse(fs.readFileSync(getLogFilename()));
 } catch (e) {
@@ -263,21 +274,6 @@ try {
 
 // Topic list / Temp topic cache
 var caches = {};
-var pendingResponses = {};
-var addPendingResponse = function(cacheKey, res) {
-  if (!(cacheKey in pendingResponses)) {
-    pendingResponses[cacheKey] = [];
-  }
-  pendingResponses[cacheKey].push(res);
-  return pendingResponses[cacheKey].length == 1;
-}
-var sendToAllResponses = function(cacheKey, responseCode, body) {
-  for (var i in pendingResponses[cacheKey]) {
-    var pRes = pendingResponses[cacheKey][i];
-    pRes.send(responseCode, body);
-  }
-  pendingResponses[cacheKey] = [];
-}
 
 // Rate limit system
 var resetRateLimit = function(field) {
@@ -470,17 +466,14 @@ var topicJsonFromDoc = function(doc) {
 server.get('/ping', function(req, res, next) {
   shouldUseAPI();
   res.send({
-    "download_time": pingTime,
-    "current_delay": currentDelay,
+    "download_time": statAvg(downloadTimes),
+    "forum_successes": statAvg(forumSuccesses),
+    "api_successes": statAvg(apiSuccesses),
     "api_score": apiScore
   });
 });
 
-server.put('/new-account/:id/:private_token', function(req, res, next) {
-  res.charSet('utf-8');
-  if (checkInt(req.params.id, "ID", res)) {
-    return;
-  }
+server.put('/new-account/:id/:private_token', checkParams, function(req, res, next) {
   if (req.params.private_token.length != 32) {
     res.send(400, "Private token's length must be 32.");
     return;
@@ -516,11 +509,7 @@ server.put('/new-account/:id/:private_token', function(req, res, next) {
   saveDb();
 });
 
-server.post('/verify-account/:id/:private_token', function(req, res, next) {
-  res.charSet('utf-8');
-  if (checkInt(req.params.id, "ID", res)) {
-    return;
-  }
+server.post('/verify-account/:id/:private_token', checkParams, function(req, res, next) {
   if (req.params.private_token.length != 32) {
     res.send(400, "Private token's length must be 32.");
     return;
@@ -541,63 +530,65 @@ server.post('/verify-account/:id/:private_token', function(req, res, next) {
     res.send(400, "Private token mismatch.");
     return;
   }
-  if (!addPendingResponse(req.params.id, res)) {
-    return;
-  }
-  var options = {
-    url: 'http://forum15.hkgolden.com/ProfilePage.aspx?userid={}'.format(req.params.id),
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; rv:36.0) Gecko/20100101 Firefox/36.0',
-      'Referer': 'http://forum15.hkgolden.com'
+  req.singleton = {
+    "key": req.params.id,
+    "fn": function(callback) {
+      var options = {
+        url: 'http://forum15.hkgolden.com/ProfilePage.aspx?userid={}'.format(req.params.id),
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; rv:36.0) Gecko/20100101 Firefox/36.0',
+          'Referer': 'http://forum15.hkgolden.com'
+        },
+        timeout: REQUEST_TIMEOUT
+      };
+
+      desktopLimiter.removeTokens(1, function(err, remainingRequests) {
+        request(options, function(error, response, body) {
+          if (error != null && "code" in error && error.code == "ETIMEDOUT") {
+            req.code = 503;
+            req.result = "Timed out connecting to upstream.";
+            callback();
+            return;
+          }
+          if (error || response.statusCode != 200) {
+            req.code = 503;
+            req.result = "Server has received an invalid response from upstream.";
+            callback();
+            return;
+          }
+          $ = cheerio.load(body);
+          var websiteField = $("#ctl00_ContentPlaceHolder1_lb_website");
+          if (!websiteField.length) {
+            req.code = 503;
+            req.result = "Server has received an invalid response from upstream.";
+            callback();
+            return;
+          }
+          var publicToken = websiteField.text().trim();
+          if (publicToken !== db["accounts"][req.params.id]["public_token"]) {
+            req.code = 417;
+            req.result = "Fetched public token does not match database's record.";
+            callback();
+            return;
+          }
+          db["accounts"][req.params.id]["verified"] = true;
+          db["accounts"][req.params.id]["private_token"] = db["accounts"][req.params.id]["pending_private_token"];
+          req.result = "Successfully verified this account or this new private token.";
+          saveDb();
+          callback();
+        });
+      });
     },
-    timeout: REQUEST_TIMEOUT
+    "respond": function(req, res) {
+      res.send(req.code, req.result);
+      addStat(forumSuccesses, req.code ? 0 : 1);
+    }
   };
-  delayedFunctionRun("hkg_desktop", function() {
-    request(options, function(error, response, body) {
-      if (error != null && "code" in error && error.code == "ETIMEDOUT") {
-        sendToAllResponses(req.params.id, 503, "Timed out connecting to upstream.");
-        return;
-      }
-      if (error || response.statusCode != 200) {
-        sendToAllResponses(req.params.id, 503, "Server has received an invalid response from upstream.");
-        return;
-      }
-      $ = cheerio.load(body);
-      var websiteField = $("#ctl00_ContentPlaceHolder1_lb_website");
-      if (!websiteField.length) {
-        sendToAllResponses(req.params.id, 503, "Server has received an invalid response from upstream.");
-        return;
-      }
-      var publicToken = websiteField.text().trim();
-      if (publicToken !== db["accounts"][req.params.id]["public_token"]) {
-        sendToAllResponses(req.params.id, 417, "Fetched public token does not match database's record.");
-        return;
-      }
-      db["accounts"][req.params.id]["verified"] = true;
-      db["accounts"][req.params.id]["private_token"] = db["accounts"][req.params.id]["pending_private_token"];
-      sendToAllResponses(req.params.id, 200, "Successfully verified this account or this new private token.");
-      saveDb();
-    });
-  });
-});
+  next();
+}, singleton);
 
 server.use(restify.queryParser());
-server.get('/topic-list/:forum/:page/:id/:private_token', function(req, res, next) {
-  res.charSet('utf-8');
-  if (checkInt(req.params.id, "ID", res)) {
-    return;
-  }
-  if (checkInt(req.params.page, "Page", res)) {
-    return;
-  }
-  if (VALID_FORUMS.indexOf(req.params.forum) === -1) {
-    res.send(400, "Forum is not valid.");
-    return;
-  }
-  if (checkAPIRequest(req, res)) {
-    return;
-  }
-
+server.get('/topic-list/:forum/:page/:id/:private_token', checkParams, checkAPIRequest, function(req, res, next) {
   var isFriend = FRIEND_USER_IDS.indexOf(parseInt(req.params.id)) !== -1;
   var shouldRespondWithCache = !(isFriend && NO_CACHE_FRIEND_REQUESTS) || req.query.cache === "true";
 
@@ -609,9 +600,6 @@ server.get('/topic-list/:forum/:page/:id/:private_token', function(req, res, nex
     console.log("Cache hit: {}".format(cacheKey));
     return;
   }
-  if (!addPendingResponse(cacheKey, res)) {
-    return;
-  }
 
   if (!isFriend) {
     if (!checkRateLimit("hkg_access", req.params.private_token, API_ACCESS_RATE_LIMIT_TIMES, true)) {
@@ -619,93 +607,98 @@ server.get('/topic-list/:forum/:page/:id/:private_token', function(req, res, nex
       return true;
     }
   }
+
   var useAPI = shouldUseAPI();
-  console.log("Requesting: {}".format(cacheKey));
-  var options;
-  if (useAPI) {
-    var options = {
-      url: 'http://android-1-2.hkgolden.com/newTopics.aspx?s={}&user_id={}&type={}&page={}&filtermode=N&sensormode=N&returntype=json'.format(
-        apiKey2TopicList(req.params.id, req.params.forum, req.params.page), req.params.id, req.params.forum, req.params.page
-      ),
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; rv:36.0) Gecko/20100101 Firefox/36.0',
-        'Referer': 'http://forum15.hkgolden.com'
-      },
-      timeout: REQUEST_TIMEOUT
-    };
-  } else {
-    var options = {
-      url: 'http://forum15.hkgolden.com/topics.aspx?type={}&page={}&filtermodeS=N&sensormode=N'.format(
-        req.params.forum, req.params.page
-      ),
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; rv:36.0) Gecko/20100101 Firefox/36.0',
-        'Referer': 'http://forum15.hkgolden.com'
-      },
-      timeout: REQUEST_TIMEOUT
-    };
-  }
-  delayedFunctionRun(useAPI ? "hkg_api" : "hkg_desktop", function() {
-    var startTime = Date.now();
-    request(options, function(error, response, body) {
-      if (error != null && "code" in error && error.code == "ETIMEDOUT") {
-        sendToAllResponses(cacheKey, 503, "Timed out connecting to upstream.");
-        if (useAPI) {
-          apiScore -= 2;
-        } else {
-          apiScore += 2;
-        }
-        return;
-      }
-      if (error || response.statusCode != 200) {
-        sendToAllResponses(cacheKey, 503, "Server has received an invalid response from upstream.");
-        if (useAPI) {
-          apiScore -= 2;
-        } else {
-          apiScore += 2;
-        }
-        return;
-      }
+
+  req.singleton = {
+    "key": cacheKey,
+    "fn": function(callback) {
+      console.log("Requesting: {}".format(cacheKey));
+      var options;
       if (useAPI) {
-        apiScore++;
+        var options = {
+          url: 'http://android-1-2.hkgolden.com/newTopics.aspx?s={}&user_id={}&type={}&page={}&filtermode=N&sensormode=N&returntype=json'.format(
+            apiKey2TopicList(req.params.id, req.params.forum, req.params.page), req.params.id, req.params.forum, req.params.page
+          ),
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; rv:36.0) Gecko/20100101 Firefox/36.0',
+            'Referer': 'http://forum15.hkgolden.com'
+          },
+          timeout: REQUEST_TIMEOUT
+        };
+      } else {
+        var options = {
+          url: 'http://forum15.hkgolden.com/topics.aspx?type={}&page={}&filtermodeS=N&sensormode=N'.format(
+            req.params.forum, req.params.page
+          ),
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; rv:36.0) Gecko/20100101 Firefox/36.0',
+            'Referer': 'http://forum15.hkgolden.com'
+          },
+          timeout: REQUEST_TIMEOUT
+        };
       }
-      var finishTime = Date.now();
-      pingTime = finishTime - startTime;
-      var cache = {
-        "data": useAPI ? JSON.parse(body) : topicListJsonFromDoc(body),
-        "expires": finishTime + HKGOLDEN_CACHE_TIME
-      }
-      if (cache["data"].topic_list.length == 0) {
-        sendToAllResponses(cacheKey, 503, "Server has received an invalid response from upstream.");
-        if (useAPI) {
-          apiScore -= 2;
-        } else {
-          apiScore += 2;
-        }
-        return;
-      }
-      sendToAllResponses(cacheKey, 200, cache["data"]);
-      caches[cacheKey] = cache;
-    })
-  });
-});
+      (useAPI ? apiLimiter : desktopLimiter).removeTokens(1, function(err, remainingRequests) {
+        var startTime = Date.now();
+        request(options, function(error, response, body) {
+          if (error != null && "code" in error && error.code == "ETIMEDOUT") {
+            req.code = 503;
+            req.result = "Timed out connecting to upstream.";
+            if (useAPI) {
+              apiScore -= 2;
+            } else {
+              apiScore += 2;
+            }
+            callback();
+            return;
+          }
+          if (error || response.statusCode != 200) {
+            req.code = 503;
+            req.result = "Server has received an invalid response from upstream.";
+            if (useAPI) {
+              apiScore -= 2;
+            } else {
+              apiScore += 2;
+            }
+            callback();
+            return;
+          }
+          if (useAPI) {
+            apiScore++;
+          }
+          var finishTime = Date.now();
+          addStat(downloadTimes, finishTime - startTime);
+          var cache = {
+            "data": useAPI ? JSON.parse(body) : topicListJsonFromDoc(body),
+            "expires": finishTime + HKGOLDEN_CACHE_TIME
+          }
+          if (cache["data"].topic_list.length == 0) {
+            req.code = 503;
+            req.result = "Server has received an invalid response from upstream.";
+            if (useAPI) {
+              apiScore -= 2;
+            } else {
+              apiScore += 2;
+            }
+            callback();
+            return;
+          }
+          req.result = cache["data"];
+          caches[cacheKey] = cache;
+          callback();
+        })
+      });
+    },
+    "respond": function(req, res) {
+      res.send(req.code, req.result);
+      addStat(useAPI ? apiSuccesses : forumSuccesses, req.code ? 0 : 1);
+    }
+  };
+  next();
+}, singleton);
 
-server.get('/view-topic/:topic_id/:page/:id/:private_token', function(req, res, next) {
-  res.charSet('utf-8');
-  if (checkInt(req.params.id, "User ID", res)) {
-    return;
-  }
-  if (checkInt(req.params.topic_id, "Topic ID", res)) {
-    return;
-  }
-  if (checkInt(req.params.page, "Page", res)) {
-    return;
-  }
-  if (checkAPIRequest(req, res)) {
-    return;
-  }
+server.get('/view-topic/:topic_id/:page/:id/:private_token', checkParams, checkAPIRequest, function(req, res, next) {
   var page = req.params.page - 1;
-
   var cacheKey = "{}-{}".format(req.params.topic_id, page);
   if (cacheKey in db["long_cache"]) {
     console.log("Long cache hit: {}".format(cacheKey));
@@ -723,9 +716,6 @@ server.get('/view-topic/:topic_id/:page/:id/:private_token', function(req, res, 
     res.send(caches[cacheKey]["data"]);
     return;
   }
-  if (!addPendingResponse(cacheKey, res)) {
-    return;
-  }
 
   if (!isFriend) {
     if (!checkRateLimit("hkg_access", req.params.private_token, API_ACCESS_RATE_LIMIT_TIMES, true)) {
@@ -734,108 +724,122 @@ server.get('/view-topic/:topic_id/:page/:id/:private_token', function(req, res, 
     }
   }
 
-  console.log("Requesting: {}".format(cacheKey));
-  var start = page == 0 ? 0 : page * POSTS_PER_PAGE + 1;
-  var limit = page == 0 ? POSTS_PER_PAGE + 1 : POSTS_PER_PAGE;
-
-  var options;
   var useAPI = shouldUseAPI();
 
-  if (useAPI) {
-    options = {
-      url: 'http://android-1-2.hkgolden.com/newView.aspx',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; rv:36.0) Gecko/20100101 Firefox/36.0',
-        'Referer': 'http://forum15.hkgolden.com'
-      },
-      form: {
-        s: apiKey2ViewTopic(req.params.id, req.params.topic_id, start),
-        user_id: req.params.id,
-        message: req.params.topic_id,
-        start: start,
-        limit: limit,
-        filtermode: "N",
-        sensormode: "N",
-        returntype: "json"
-      },
-      timeout: REQUEST_TIMEOUT
-    };
-  } else {
-    options = {
-      url: 'http://forum15.hkgolden.com/view.aspx?message={}&page={}&sensormode=N'.format(
-        req.params.topic_id, page + 1
-      ),
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; rv:36.0) Gecko/20100101 Firefox/36.0',
-        'Referer': 'http://forum15.hkgolden.com'
-      },
-      timeout: REQUEST_TIMEOUT
-    };
-  }
-  delayedFunctionRun(useAPI ? "hkg_api" : "hkg_desktop", function() {
-    request(options, function(error, response, body) {
-      if (error != null && "code" in error && error.code == "ETIMEDOUT") {
-        sendToAllResponses(cacheKey, 503, "Timed out connecting to upstream.");
-        if (useAPI) {
-          apiScore -= 2;
-        } else {
-          apiScore += 2;
-        }
-        return;
-      }
-      if (error || response.statusCode != 200) {
-        sendToAllResponses(cacheKey, 503, "Server has received an invalid response from upstream.");
-        if (useAPI) {
-          apiScore -= 2;
-        } else {
-          apiScore += 2;
-        }
-        return;
-      }
+  req.singleton = {
+    "key": cacheKey,
+    "fn": function(callback) {
+      console.log("Requesting: {}".format(cacheKey));
+      var start = page == 0 ? 0 : page * POSTS_PER_PAGE + 1;
+      var limit = page == 0 ? POSTS_PER_PAGE + 1 : POSTS_PER_PAGE;
+
+      var options;
+
       if (useAPI) {
-        apiScore++;
-      }
-      var cache = {
-        "data": useAPI ? JSON.parse(body) : topicJsonFromDoc(body),
-      }
-      if (cache["data"].success && cache["data"].messages.length == 0) {
-        sendToAllResponses(cacheKey, 503, "Server has received an invalid response from upstream.");
-        if (useAPI) {
-          apiScore -= 2;
-        } else {
-          apiScore += 2;
-        }
-        return;
-      }
-      for (var i in cache["data"].messages) {
-        var message = cache["data"].messages[i];
-        if (message["Author_ID"] in db["post_icons"]) {
-          message["Author_Icon"] = db["post_icons"][message["Author_ID"]];
-        }
-      }
-      sendToAllResponses(cacheKey, 200, cache["data"]);
-
-      if (cache["data"]["messages"].length == limit &&
-        cache["data"]["Total_Replies"] > (page + 1) * 25) {
-        cache["expires"] = Date.now() + HKGOLDEN_LONG_CACHE_TIME;
-        db["long_cache"][cacheKey] = cache;
-        saveDb();
+        options = {
+          url: 'http://android-1-2.hkgolden.com/newView.aspx',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; rv:36.0) Gecko/20100101 Firefox/36.0',
+            'Referer': 'http://forum15.hkgolden.com'
+          },
+          form: {
+            s: apiKey2ViewTopic(req.params.id, req.params.topic_id, start),
+            user_id: req.params.id,
+            message: req.params.topic_id,
+            start: start,
+            limit: limit,
+            filtermode: "N",
+            sensormode: "N",
+            returntype: "json"
+          },
+          timeout: REQUEST_TIMEOUT
+        };
       } else {
-        cache["expires"] = Date.now() + HKGOLDEN_CACHE_TIME;
-        caches[cacheKey] = cache;
+        options = {
+          url: 'http://forum15.hkgolden.com/view.aspx?message={}&page={}&sensormode=N'.format(
+            req.params.topic_id, page + 1
+          ),
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; rv:36.0) Gecko/20100101 Firefox/36.0',
+            'Referer': 'http://forum15.hkgolden.com'
+          },
+          timeout: REQUEST_TIMEOUT
+        };
       }
-    })
-  });
-});
+      (useAPI ? apiLimiter : desktopLimiter).removeTokens(1, function(err, remainingRequests) {
+        request(options, function(error, response, body) {
+          if (error != null && "code" in error && error.code == "ETIMEDOUT") {
+            req.code = 503;
+            req.result = "Timed out connecting to upstream.";
+            if (useAPI) {
+              apiScore -= 2;
+            } else {
+              apiScore += 2;
+            }
+            callback();
+            return;
+          }
+          if (error || response.statusCode != 200) {
+            req.code = 503;
+            req.result = "Server has received an invalid response from upstream.";
+            if (useAPI) {
+              apiScore -= 2;
+            } else {
+              apiScore += 2;
+            }
+            callback();
+            return;
+          }
+          if (useAPI) {
+            apiScore++;
+          }
+          var cache = {
+            "data": useAPI ? JSON.parse(body) : topicJsonFromDoc(body),
+          }
+          if (cache["data"].success && cache["data"].messages.length == 0) {
+            req.code = 503;
+            req.result = "Server has received an invalid response from upstream.";
+            if (useAPI) {
+              apiScore -= 2;
+            } else {
+              apiScore += 2;
+            }
+            callback();
+            return;
+          }
+          for (var i in cache["data"].messages) {
+            var message = cache["data"].messages[i];
+            if (message["Author_ID"] in db["post_icons"]) {
+              message["Author_Icon"] = db["post_icons"][message["Author_ID"]];
+            }
+          }
+          req.result = cache["data"];
+          if (cache["data"]["messages"].length == limit &&
+            cache["data"]["Total_Replies"] > (page + 1) * 25) {
+            cache["expires"] = Date.now() + HKGOLDEN_LONG_CACHE_TIME;
+            db["long_cache"][cacheKey] = cache;
+            saveDb();
+          } else {
+            cache["expires"] = Date.now() + HKGOLDEN_CACHE_TIME;
+            caches[cacheKey] = cache;
+          }
+          callback();
+        })
+      });
+    },
+    "respond": function(req, res) {
+      res.send(req.code, req.result);
+      addStat(useAPI ? apiSuccesses : forumSuccesses, req.code ? 0 : 1);
+    }
+  };
+  next();
+}, singleton);
 
-server.post('/invalidate-cache/:cache_id/:id/:private_token', function(req, res, next) {
+server.post('/invalidate-cache/:cache_id/:id/:private_token', checkAPIRequest, function(req, res, next) {
   if (!(req.params.cache_id in caches)) {
     res.send({
       "deleted": false
     });
-    return;
-  }
-  if (checkAPIRequest(req, res)) {
     return;
   }
   delete caches[req.params.cache_id];
@@ -845,27 +849,7 @@ server.post('/invalidate-cache/:cache_id/:id/:private_token', function(req, res,
 });
 
 server.use(restify.bodyParser());
-server.post('/raw-request/:id/:private_token', function(req, res, next) {
-  res.charSet('utf-8');
-  if (checkInt(req.params.id, "User ID", res)) {
-    return;
-  }
-  if (typeof req.body.path === 'undefined') {
-    res.send(400, "Raw request path is undefined.");
-    return;
-  }
-  if (req.body.path.charAt(0) !== '/') {
-    res.send(400, "Raw request path is invalid.");
-    return;
-  }
-  if (!("api" in req.body)) {
-    res.send(400, "Raw request did not indicate to use API or not.");
-    return;
-  }
-  if (checkAPIRequest(req, res)) {
-    return;
-  }
-
+server.post('/raw-request/:id/:private_token', checkParams, checkRawRequest, checkAPIRequest, function(req, res, next) {
   if (FRIEND_USER_IDS.indexOf(parseInt(req.params.id)) === -1) {
     if (!checkRateLimit("hkg_access", req.params.private_token, API_ACCESS_RATE_LIMIT_TIMES, true)) {
       res.send(429, "Rate limit exceeded.");
@@ -908,19 +892,33 @@ server.post('/raw-request/:id/:private_token', function(req, res, next) {
   console.log(reqLog);
   log.raw_requests.push(reqLog);
   saveLog();
-  delayedFunctionRun(req.body.api ? "hkg_api" : "hkg_desktop", function() {
+  (req.body.api ? apiLimiter : desktopLimiter).removeTokens(1, function(err, remainingRequests) {
     request(options, function(error, response, body) {
       if (error != null && "code" in error && error.code == "ETIMEDOUT") {
         res.send(503, "Timed out connecting to upstream.");
+        addStat(useAPI ? apiSuccesses : forumSuccesses, 0);
         return;
       }
       if (error || response.statusCode != 200) {
         res.send(503, "Server has received an invalid response from upstream.");
+        addStat(useAPI ? apiSuccesses : forumSuccesses, 0);
         return;
+      }
+      if (!req.body.api) {
+        $ = cheerio.load(body);
+        if ($("html").text().trim().length === 0) {
+          addStat(forumSuccesses, 0);
+        } else if ($(".FloatsClearing").length === 1) {
+          addStat(forumSuccesses, 0);
+        } else {
+          addStat(forumSuccesses, 1);
+        }
+      } else {
+        addStat(apiSuccesses, 1);
       }
       //console.log(body);
       res.end(body);
-    })
+    });
   });
 
 });
