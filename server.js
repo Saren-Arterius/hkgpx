@@ -73,7 +73,7 @@ var statAvg = function(array) {
   for (var i in array) {
     sum += array[i];
   }
-  return parseInt(sum / array.length);
+  return sum / array.length;
 }
 
 var shouldUseAPI = function() {
