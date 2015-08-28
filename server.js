@@ -35,8 +35,8 @@ var FRIEND_ONLY_SERVER = false; // true: Only friends can create a new account h
 var NO_CACHE_FRIEND_REQUESTS = true; // Do not respond friend's request with short cache (long cache ok) (?cache=true to bypass)
 
 // This is to prevent the server from triggering HKGolden's rate limit system to block ourself out.
-var desktopLimiter = new RateLimiter(20, 'minute');
-var apiLimiter = new RateLimiter(60, 'minute');
+var desktopLimiter = new RateLimiter(2, 6000);
+var apiLimiter = new RateLimiter(40, 'minute');
 
 // How frequent will rate limits reset
 var RATE_LIMIT_RESET_INTERVALS = {
