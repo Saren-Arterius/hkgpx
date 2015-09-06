@@ -50,7 +50,7 @@ var VALID_FORUMS = ["ET", "CA", "FN", "GM", "HW", "IN", "SW", "MP", "AP",
 ];
 
 var MAX_SCORE = 20;
-var STAT_SAMPLES = 20;
+var STAT_SAMPLES = 25;
 // ======= CHANGE THINGS ABOVE =======
 
 var downloadTimes = [];
@@ -156,7 +156,7 @@ var checkAPIRequest = function(req, res, next) {
     return;
   }
   if (!(req.params.id in db["accounts"])) {
-    res.send(400, "Account does not exist.");
+    res.send(400, "Account does not exist.\n請更新中轉伺服器密匙");
     return;
   }
   if (!db["accounts"][req.params.id]["verified"]) {
@@ -617,8 +617,9 @@ server.get('/topic-list/:forum/:page/:id/:private_token', checkParams, checkAPIR
       var options;
       if (useAPI) {
         var options = {
-          url: 'http://android-1-2.hkgolden.com/newTopics.aspx?s={}&user_id={}&type={}&page={}&filtermode=N&sensormode=N&returntype=json'.format(
-            apiKey2TopicList(req.params.id, req.params.forum, req.params.page), req.params.id, req.params.forum, req.params.page
+          // url: 'http://android-1-2.hkgolden.com/newTopics.aspx?s={}&user_id={}&type={}&page={}&filtermode=N&sensormode=N&returntype=json'.format(
+          url: 'http://apps.hkgolden.com/android_api/v_1_0//newTopics.aspx?user_id=1&type={}&page={}&filtermode=N&sensormode=N&returntype=json'.format(
+            req.params.forum, req.params.page
           ),
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; rv:36.0) Gecko/20100101 Firefox/36.0',
@@ -730,12 +731,13 @@ server.get('/view-topic/:topic_id/:page/:id/:private_token', checkParams, checkA
     "key": cacheKey,
     "fn": function(callback) {
       console.log("Requesting: {}".format(cacheKey));
-      var start = page == 0 ? 0 : page * POSTS_PER_PAGE + 1;
-      var limit = page == 0 ? POSTS_PER_PAGE + 1 : POSTS_PER_PAGE;
+      // var start = page == 0 ? 0 : page * POSTS_PER_PAGE + 1;
+      // var limit = page == 0 ? POSTS_PER_PAGE + 1 : POSTS_PER_PAGE;
 
       var options;
 
       if (useAPI) {
+        /*
         options = {
           url: 'http://android-1-2.hkgolden.com/newView.aspx',
           headers: {
@@ -751,6 +753,17 @@ server.get('/view-topic/:topic_id/:page/:id/:private_token', checkParams, checkA
             filtermode: "N",
             sensormode: "N",
             returntype: "json"
+          },
+          timeout: REQUEST_TIMEOUT
+        };
+        */
+        options = {
+          url: 'http://apps.hkgolden.com/android_api/v_1_0/newView.aspx?user_id=1&message={}&page={}&filtermode=N&sensormode=N&returntype=json'.format(
+            req.params.topic_id, page + 1
+          ),
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; rv:36.0) Gecko/20100101 Firefox/36.0',
+            'Referer': 'http://forum15.hkgolden.com'
           },
           timeout: REQUEST_TIMEOUT
         };
