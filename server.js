@@ -107,9 +107,7 @@ if (!String.prototype.format) {
 }
 
 var isInt = function (value) {
-  return !isNaN(value) &&
-    parseInt(Number(value), 10) === value &&
-    !isNaN(parseInt(value, 10));
+  return !isNaN(value) && !isNaN(parseInt(value, 10));
 };
 
 var checkParams = function (req, res, next) {
