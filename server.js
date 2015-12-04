@@ -98,9 +98,10 @@ Date.prototype.yyyymmdd = function () {
 
 if (!String.prototype.format) {
   String.prototype.format = function () {
+    var i = 0;
     var args = arguments;
-    return this.replace(/{(\d+)}/g, function (match, number) {
-      return typeof args[number] !== 'undefined' ? args[number] : match;
+    return this.replace(/{}/g, function () {
+      return typeof args[i] !== 'undefined' ? args[i++] : '';
     });
   };
 }
