@@ -6,7 +6,7 @@ var restify = require('restify');
 var request = require('request');
 var fs = require('fs');
 var path = require('path');
-// var md5 = require('MD5');
+var md5 = require('MD5');
 var RateLimiter = require('limiter').RateLimiter;
 // ======== CHANGE THINGS BELOW =======
 var BIND_ADDRESS = process.env.OPENSHIFT_NODEJS_IP || '0.0.0.0';
@@ -46,7 +46,7 @@ var RATE_LIMIT_RESET_INTERVALS = {
 
 var VALID_FORUMS = ['ET', 'CA', 'FN', 'GM', 'HW', 'IN', 'SW', 'MP', 'AP',
   'SP', 'LV', 'SY', 'ED', 'BB', 'PT', 'TR', 'CO', 'AN', 'TO', 'MU', 'VI',
-  'DC', 'ST', 'WK', 'TS', 'RA', 'MB', 'AC', 'JT', 'EP', 'BW', 'AU'
+  'DC', 'ST', 'WK', 'TS', 'RA', 'MB', 'AC', 'JT', 'EP', 'BW', 'AU', 'SC'
 ];
 
 var MAX_SCORE = 20;
@@ -194,16 +194,15 @@ var apiKey1 = function (userID) {
 var apiKey2 = function (userID) {
   return md5('{}_HKGOLDEN_{}_$API#Android_1_2^'.format(new Date().yyyymmdd(), userID));
 }
+*/
 
 var apiKey2TopicList = function (userID, forum, page) {
   return md5('{}_HKGOLDEN_{}_$API#Android_1_2^{}_{}_N_N'.format(new Date().yyyymmdd(), userID, forum, page));
-}
+};
 
 var apiKey2ViewTopic = function (userID, topicID, start) {
   return md5('{}_HKGOLDEN_{}_$API#Android_1_2^{}_{}_N_N'.format(new Date().yyyymmdd(), userID, topicID, start));
-}
-
-*/
+};
 
 // DB
 var dbFilenameJson = path.join(__dirname, 'db.json');
@@ -392,7 +391,7 @@ var topicJsonFromDoc = function (doc) {
         'tbody:nth-child(1) > tr:nth-child(2) > td:nth-child(1) > p:nth-child(2)').text()
     };
   }
-  var title = '(null)';
+  var title = $('td.repliers_header:nth-child(2) > div:nth-child(1)').text();
   var sp = doc.split('\r\n');
   for (var i in sp) {
     if (sp[i].indexOf('<meta') !== -1 && sp[i].indexOf('og:title\'') !== -1) {
@@ -623,9 +622,9 @@ server.get('/topic-list/:forum/:page/:id/:private_token', checkParams, checkAPIR
       var options;
       if (useAPI) {
         options = {
-          // url: 'http://android-1-2.hkgolden.com/newTopics.aspx?s={}&user_id={}&type={}&page={}&filtermode=N&sensormode=N&returntype=json'.format(
-          url: 'http://apps.hkgolden.com/android_api/v_1_0//newTopics.aspx?user_id=1&type={}&page={}&filtermode=N&sensormode=N&returntype=json'.format(
-            req.params.forum, req.params.page
+          // url: 'http://apps.hkgolden.com/android_api/v_1_0//newTopics.aspx?user_id=1&type={}&page={}&filtermode=N&sensormode=N&returntype=json'.format(
+          url: 'http://android-1-2.hkgolden.com/newTopics.aspx?s={}&user_id={}&type={}&page={}&filtermode=N&sensormode=N&returntype=json'.format(
+            apiKey2TopicList(req.params.id, req.params.forum, req.params.page), req.params.id, req.params.forum, req.params.page
           ),
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; rv:36.0) Gecko/20100101 Firefox/36.0',
@@ -740,13 +739,12 @@ server.get('/view-topic/:topic_id/:page/:id/:private_token', checkParams, checkA
     'key': cacheKey,
     'fn': function (callback) {
       console.log('Requesting: {}'.format(cacheKey));
-      // var start = page === 0 ? 0 : page * POSTS_PER_PAGE + 1;
+      var start = page === 0 ? 0 : page * POSTS_PER_PAGE + 1;
       var limit = page === 0 ? POSTS_PER_PAGE + 1 : POSTS_PER_PAGE;
 
       var options;
 
       if (useAPI) {
-        /*
         options = {
           url: 'http://android-1-2.hkgolden.com/newView.aspx',
           headers: {
@@ -765,7 +763,7 @@ server.get('/view-topic/:topic_id/:page/:id/:private_token', checkParams, checkA
           },
           timeout: REQUEST_TIMEOUT
         };
-        */
+        /*
         options = {
           url: 'http://apps.hkgolden.com/android_api/v_1_0/newView.aspx?user_id=1&message={}&page={}&filtermode=N&sensormode=N&returntype=json'.format(
             req.params.topic_id, page + 1
@@ -776,6 +774,7 @@ server.get('/view-topic/:topic_id/:page/:id/:private_token', checkParams, checkA
           },
           timeout: REQUEST_TIMEOUT
         };
+        */
       } else {
         options = {
           url: 'http://forum15.hkgolden.com/view.aspx?message={}&page={}&sensormode=N'.format(
