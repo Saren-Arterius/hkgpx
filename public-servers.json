@@ -3,16 +3,13 @@
   "description": "香港 (CloudFlare)"
 }, {
   "host": "https://cf-hkgpx.wtako.net",
-  "description": "香港 (CloudFlare, HTTPS)\n(你的裝置未必支援)"
-}, {
-  "host": "https://hkgpx.wtako.net",
-  "description": "香港 (HTTPS)"
+  "description": "香港 (CloudFlare, HTTPS)\n(未必支援)"
 }, {
   "host": "http://cf-hkgpx.saren.me",
   "description": "新加坡 (CloudFlare)"
 }, {
-  "host": "https://cf-hkgpx.saren.me",
-  "description": "新加坡 (CloudFlare, HTTPS)\n(你的裝置未必支援)"
+  "host": "https://cf-hkgpx-sg.wtako.net",
+  "description": "新加坡 (CloudFlare, HTTPS)\n(未必支援)"
 }, {
   "host": "https://hkgpx.saren.me",
   "description": "新加坡 (HTTPS)"
@@ -24,11 +21,5 @@
   "description": "(預設) 美國 (CloudFlare)\n(帳戶資料易失)"
 }, {
   "host": "https://cf-hkgpx-rhc.wtako.net",
-  "description": "美國 (CloudFlare, HTTPS)\n(你的裝置未必支援)"
-}, {
-  "host": "https://hkgpx-us.herokuapp.com",
-  "description": "美國 (HTTPS)\n(帳戶資料易失)"
-}, {
-  "host": "https://hkgpx-eu.herokuapp.com",
-  "description": "歐洲 (HTTPS)\n(帳戶資料易失)"
+  "description": "美國 (CloudFlare, HTTPS)\n(未必支援)"
 }]
