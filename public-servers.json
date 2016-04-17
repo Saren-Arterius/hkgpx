@@ -5,14 +5,11 @@
   "host": "https://cf-hkgpx.wtako.net",
   "description": "香港 (CloudFlare, HTTPS)\n(未必支援)"
 }, {
-  "host": "http://cf-hkgpx.saren.me",
+  "host": "http://cf-hkgpx-sg.wtako.net",
   "description": "新加坡 (CloudFlare)"
 }, {
   "host": "https://cf-hkgpx-sg.wtako.net",
   "description": "新加坡 (CloudFlare, HTTPS)\n(未必支援)"
-}, {
-  "host": "https://hkgpx.saren.me",
-  "description": "新加坡 (HTTPS)"
 }, {
   "host": "http://hkgpx-saren.rhcloud.com",
   "description": "美國\n(帳戶資料易失)"
